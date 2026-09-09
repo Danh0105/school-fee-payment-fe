@@ -8,6 +8,7 @@ import { BankReconciliation } from '../reconciliation/entities/bank-reconciliati
 import { PaymentProvidersService } from '../payment-providers/payment-providers.service';
 import { PaymentAllocationsService } from '../payment-allocations/payment-allocations.service';
 import { SchoolsService } from '../schools/schools.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { QueryPaymentTransactionDto } from './dto/query-payment-transaction.dto';
 import { AppException } from '../common/exceptions/app.exception';
@@ -36,12 +37,14 @@ export class PaymentTransactionsService {
     private readonly paymentProvidersService: PaymentProvidersService,
     private readonly paymentAllocationsService: PaymentAllocationsService,
     private readonly schoolsService: SchoolsService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async ingest(
     providerCode: string,
     rawBody: Record<string, unknown>,
     headers: Record<string, string | undefined>,
+    actorUserId?: string | null,
   ): Promise<IngestResult> {
     const provider = this.paymentProvidersService.get(providerCode);
 
@@ -138,9 +141,25 @@ export class PaymentTransactionsService {
         await this.paymentAllocationsService.allocateToOrder(
           transaction,
           order,
-          { userId: null },
+          { userId: actorUserId ?? null },
           manager,
         );
+        if (actorUserId) {
+          await this.auditLogsService.record(
+            {
+              userId: actorUserId,
+              action: 'MANUAL_PAYMENT',
+              entityType: 'PaymentTransaction',
+              entityId: transaction.id,
+              newData: {
+                provider: provider.code,
+                amount: parsed.amount.toFixed(2),
+                orderId: order.id,
+              },
+            },
+            manager,
+          );
+        }
         return {
           duplicate: false,
           skipped: false,
@@ -158,6 +177,22 @@ export class PaymentTransactionsService {
           status: ReconciliationStatus.UNMATCHED,
         }),
       );
+      if (actorUserId) {
+        await this.auditLogsService.record(
+          {
+            userId: actorUserId,
+            action: 'MANUAL_PAYMENT',
+            entityType: 'PaymentTransaction',
+            entityId: transaction.id,
+            newData: {
+              provider: provider.code,
+              amount: parsed.amount.toFixed(2),
+              matched: false,
+            },
+          },
+          manager,
+        );
+      }
       return {
         duplicate: false,
         skipped: false,
