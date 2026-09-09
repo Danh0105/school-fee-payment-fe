@@ -2,7 +2,6 @@ import { Body, Controller, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -19,7 +18,13 @@ export class AuthController {
     const tokens = await this.authService.login(user);
     return {
       ...tokens,
-      user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role, schoolId: user.schoolId },
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        schoolId: user.schoolId,
+      },
     };
   }
 

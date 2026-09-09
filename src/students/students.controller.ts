@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -43,14 +53,20 @@ export class StudentsController {
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('role') role: Role) {
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('role') role: Role,
+  ) {
     const student = await this.service.findById(id);
     return this.applyMasking(student, role);
   }
 
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStudentDto) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateStudentDto,
+  ) {
     return this.service.update(id, dto);
   }
 

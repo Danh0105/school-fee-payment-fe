@@ -21,8 +21,13 @@ export class AuditLogsService {
     private readonly auditLogRepository: Repository<AuditLog>,
   ) {}
 
-  async record(input: RecordAuditLogInput, manager?: EntityManager): Promise<AuditLog> {
-    const repo = manager ? manager.getRepository(AuditLog) : this.auditLogRepository;
+  async record(
+    input: RecordAuditLogInput,
+    manager?: EntityManager,
+  ): Promise<AuditLog> {
+    const repo = manager
+      ? manager.getRepository(AuditLog)
+      : this.auditLogRepository;
     const entry = repo.create({
       userId: input.userId ?? null,
       action: input.action,

@@ -21,6 +21,13 @@ import { ClassesModule } from './classes/classes.module';
 import { StudentsModule } from './students/students.module';
 import { StudentClassesModule } from './student-classes/student-classes.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { FeeCategoriesModule } from './fee-categories/fee-categories.module';
+import { FeePlansModule } from './fee-plans/fee-plans.module';
+import { FeeAssignmentsModule } from './fee-assignments/fee-assignments.module';
+import { ReceivablesModule } from './receivables/receivables.module';
+import { DiscountsModule } from './discounts/discounts.module';
+import { AdjustmentsModule } from './adjustments/adjustments.module';
+import { LedgerModule } from './ledger/ledger.module';
 
 @Module({
   imports: [
@@ -41,7 +48,10 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
         namingStrategy: new SnakeNamingStrategy(),
         autoLoadEntities: true,
         synchronize: false,
-        logging: config.get<string>('nodeEnv') === 'development' ? ['error', 'warn'] : ['error'],
+        logging:
+          config.get<string>('nodeEnv') === 'development'
+            ? ['error', 'warn']
+            : ['error'],
       }),
     }),
     DatabaseModule,
@@ -54,6 +64,13 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
     ClassesModule,
     StudentsModule,
     StudentClassesModule,
+    FeeCategoriesModule,
+    FeePlansModule,
+    FeeAssignmentsModule,
+    LedgerModule,
+    ReceivablesModule,
+    DiscountsModule,
+    AdjustmentsModule,
   ],
   controllers: [AppController],
   providers: [

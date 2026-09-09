@@ -82,14 +82,20 @@ export class AuthService {
     const expiresIn = this.config.get<string>('jwt.expiresIn')!;
     const refreshExpiresIn = this.config.get<string>('jwt.refreshExpiresIn')!;
 
-    const accessToken = await this.jwtService.signAsync(payload as unknown as Record<string, unknown>, {
-      secret: this.config.get<string>('jwt.secret'),
-      expiresIn: expiresIn as JwtSignOptions['expiresIn'],
-    });
-    const refreshToken = await this.jwtService.signAsync(payload as unknown as Record<string, unknown>, {
-      secret: this.config.get<string>('jwt.refreshSecret'),
-      expiresIn: refreshExpiresIn as JwtSignOptions['expiresIn'],
-    });
+    const accessToken = await this.jwtService.signAsync(
+      payload as unknown as Record<string, unknown>,
+      {
+        secret: this.config.get<string>('jwt.secret'),
+        expiresIn: expiresIn as JwtSignOptions['expiresIn'],
+      },
+    );
+    const refreshToken = await this.jwtService.signAsync(
+      payload as unknown as Record<string, unknown>,
+      {
+        secret: this.config.get<string>('jwt.refreshSecret'),
+        expiresIn: refreshExpiresIn as JwtSignOptions['expiresIn'],
+      },
+    );
 
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
     await this.usersService.setRefreshTokenHash(user.id, refreshTokenHash);

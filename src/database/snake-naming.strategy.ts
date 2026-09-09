@@ -7,12 +7,19 @@ function snakeCase(str: string): string {
     .toLowerCase();
 }
 
-export class SnakeNamingStrategy extends DefaultNamingStrategy implements NamingStrategyInterface {
+export class SnakeNamingStrategy
+  extends DefaultNamingStrategy
+  implements NamingStrategyInterface
+{
   tableName(targetName: string, userSpecifiedName?: string): string {
     return userSpecifiedName ?? snakeCase(targetName);
   }
 
-  columnName(propertyName: string, customName: string | undefined, embeddedPrefixes: string[]): string {
+  columnName(
+    propertyName: string,
+    customName: string | undefined,
+    embeddedPrefixes: string[],
+  ): string {
     const name = [...embeddedPrefixes, customName ?? propertyName].join('_');
     return customName ? name : snakeCase(name);
   }
@@ -29,11 +36,18 @@ export class SnakeNamingStrategy extends DefaultNamingStrategy implements Naming
     return snakeCase(`${firstTableName}_${secondTableName}`);
   }
 
-  joinTableColumnName(tableName: string, propertyName: string, columnName?: string): string {
+  joinTableColumnName(
+    tableName: string,
+    propertyName: string,
+    columnName?: string,
+  ): string {
     return snakeCase(`${tableName}_${columnName ?? propertyName}`);
   }
 
-  classTableInheritanceParentColumnName(parentTableName: string, parentTableIdPropertyName: string): string {
+  classTableInheritanceParentColumnName(
+    parentTableName: string,
+    parentTableIdPropertyName: string,
+  ): string {
     return snakeCase(`${parentTableName}_${parentTableIdPropertyName}`);
   }
 
@@ -42,7 +56,11 @@ export class SnakeNamingStrategy extends DefaultNamingStrategy implements Naming
   }
 
   indexName(tableOrName: Table | string, columns: string[]): string {
-    const table = typeof tableOrName === 'string' ? tableOrName : tableOrName.name;
-    return `IDX_${snakeCase(table)}_${columns.map((c) => snakeCase(c)).join('_')}`.slice(0, 63);
+    const table =
+      typeof tableOrName === 'string' ? tableOrName : tableOrName.name;
+    return `IDX_${snakeCase(table)}_${columns.map((c) => snakeCase(c)).join('_')}`.slice(
+      0,
+      63,
+    );
   }
 }

@@ -24,7 +24,12 @@ export class SequenceService {
     return Number(result[0].last_value);
   }
 
-  async generateCode(prefix: string, scopeKey: string, pad: number, manager?: EntityManager): Promise<string> {
+  async generateCode(
+    prefix: string,
+    scopeKey: string,
+    pad: number,
+    manager?: EntityManager,
+  ): Promise<string> {
     const seq = await this.next(scopeKey, manager);
     return `${prefix}${String(seq).padStart(pad, '0')}`;
   }

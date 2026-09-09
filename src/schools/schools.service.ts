@@ -17,7 +17,9 @@ export class SchoolsService {
   ) {}
 
   async create(dto: CreateSchoolDto): Promise<School> {
-    const existing = await this.schoolRepository.findOne({ where: { code: dto.code, deletedAt: IsNull() } });
+    const existing = await this.schoolRepository.findOne({
+      where: { code: dto.code, deletedAt: IsNull() },
+    });
     if (existing) {
       throw AppException.conflict(ErrorCode.SCHOOL_CODE_EXISTS);
     }
@@ -29,19 +31,30 @@ export class SchoolsService {
     const qb = this.schoolRepository
       .createQueryBuilder('school')
       .where('school.deletedAt IS NULL')
-      .orderBy(`school.${query.sortBy ?? 'createdAt'}`, query.sortOrder ?? 'DESC');
+      .orderBy(
+        `school.${query.sortBy ?? 'createdAt'}`,
+        query.sortOrder ?? 'DESC',
+      );
 
-    if (query.status) qb.andWhere('school.status = :status', { status: query.status });
+    if (query.status)
+      qb.andWhere('school.status = :status', { status: query.status });
     if (query.search) {
-      qb.andWhere('(school.name ILIKE :search OR school.code ILIKE :search)', { search: `%${query.search}%` });
+      qb.andWhere('(school.name ILIKE :search OR school.code ILIKE :search)', {
+        search: `%${query.search}%`,
+      });
     }
 
-    const [data, total] = await qb.skip(query.skip).take(query.limit).getManyAndCount();
+    const [data, total] = await qb
+      .skip(query.skip)
+      .take(query.limit)
+      .getManyAndCount();
     return new PaginatedResult(data, total, query.page ?? 1, query.limit ?? 20);
   }
 
   async findById(id: string): Promise<School> {
-    const school = await this.schoolRepository.findOne({ where: { id, deletedAt: IsNull() } });
+    const school = await this.schoolRepository.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
     if (!school) throw AppException.notFound(ErrorCode.SCHOOL_NOT_FOUND);
     return school;
   }
@@ -49,7 +62,9 @@ export class SchoolsService {
   async update(id: string, dto: UpdateSchoolDto): Promise<School> {
     const school = await this.findById(id);
     if (dto.code && dto.code !== school.code) {
-      const existing = await this.schoolRepository.findOne({ where: { code: dto.code, deletedAt: IsNull() } });
+      const existing = await this.schoolRepository.findOne({
+        where: { code: dto.code, deletedAt: IsNull() },
+      });
       if (existing) throw AppException.conflict(ErrorCode.SCHOOL_CODE_EXISTS);
     }
     Object.assign(school, dto);

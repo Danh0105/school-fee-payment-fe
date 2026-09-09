@@ -43,10 +43,15 @@ export class StudentsService {
     const qb = this.repo
       .createQueryBuilder('student')
       .where('student.deletedAt IS NULL')
-      .orderBy(`student.${query.sortBy ?? 'createdAt'}`, query.sortOrder ?? 'DESC');
+      .orderBy(
+        `student.${query.sortBy ?? 'createdAt'}`,
+        query.sortOrder ?? 'DESC',
+      );
 
-    if (query.schoolId) qb.andWhere('student.schoolId = :schoolId', { schoolId: query.schoolId });
-    if (query.status) qb.andWhere('student.status = :status', { status: query.status });
+    if (query.schoolId)
+      qb.andWhere('student.schoolId = :schoolId', { schoolId: query.schoolId });
+    if (query.status)
+      qb.andWhere('student.status = :status', { status: query.status });
     if (query.classId) {
       qb.innerJoin(
         StudentClass,
@@ -56,17 +61,25 @@ export class StudentsService {
       );
     }
     if (query.search) {
-      qb.andWhere('(student.fullName ILIKE :search OR student.studentCode ILIKE :search)', {
-        search: `%${query.search}%`,
-      });
+      qb.andWhere(
+        '(student.fullName ILIKE :search OR student.studentCode ILIKE :search)',
+        {
+          search: `%${query.search}%`,
+        },
+      );
     }
 
-    const [data, total] = await qb.skip(query.skip).take(query.limit).getManyAndCount();
+    const [data, total] = await qb
+      .skip(query.skip)
+      .take(query.limit)
+      .getManyAndCount();
     return new PaginatedResult(data, total, query.page ?? 1, query.limit ?? 20);
   }
 
   async findById(id: string): Promise<Student> {
-    const student = await this.repo.findOne({ where: { id, deletedAt: IsNull() } });
+    const student = await this.repo.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
     if (!student) throw AppException.notFound(ErrorCode.STUDENT_NOT_FOUND);
     return student;
   }

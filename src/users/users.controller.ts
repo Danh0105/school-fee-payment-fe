@@ -15,6 +15,12 @@ export class UsersController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   async create(@Body() dto: CreateUserDto) {
     const user = await this.usersService.create(dto);
-    return { id: user.id, email: user.email, fullName: user.fullName, role: user.role, schoolId: user.schoolId };
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      schoolId: user.schoolId,
+    };
   }
 }

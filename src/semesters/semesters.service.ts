@@ -21,11 +21,18 @@ export class SemestersService {
   }
 
   async findAll(query: QuerySemesterDto): Promise<PaginatedResult<Semester>> {
-    const qb = this.repo.createQueryBuilder('s').orderBy(`s.${query.sortBy ?? 'startDate'}`, query.sortOrder ?? 'ASC');
-    if (query.academicYearId) qb.andWhere('s.academicYearId = :id', { id: query.academicYearId });
-    if (query.search) qb.andWhere('s.name ILIKE :search', { search: `%${query.search}%` });
+    const qb = this.repo
+      .createQueryBuilder('s')
+      .orderBy(`s.${query.sortBy ?? 'startDate'}`, query.sortOrder ?? 'ASC');
+    if (query.academicYearId)
+      qb.andWhere('s.academicYearId = :id', { id: query.academicYearId });
+    if (query.search)
+      qb.andWhere('s.name ILIKE :search', { search: `%${query.search}%` });
 
-    const [data, total] = await qb.skip(query.skip).take(query.limit).getManyAndCount();
+    const [data, total] = await qb
+      .skip(query.skip)
+      .take(query.limit)
+      .getManyAndCount();
     return new PaginatedResult(data, total, query.page ?? 1, query.limit ?? 20);
   }
 

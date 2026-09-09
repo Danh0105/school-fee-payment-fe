@@ -28,7 +28,9 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto): Promise<User> {
-    const existing = await this.userRepository.findOne({ where: { email: dto.email } });
+    const existing = await this.userRepository.findOne({
+      where: { email: dto.email },
+    });
     if (existing) {
       throw AppException.conflict(ErrorCode.EMAIL_ALREADY_EXISTS);
     }
@@ -43,7 +45,10 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  async setRefreshTokenHash(userId: string, refreshTokenHash: string | null): Promise<void> {
+  async setRefreshTokenHash(
+    userId: string,
+    refreshTokenHash: string | null,
+  ): Promise<void> {
     await this.userRepository.update({ id: userId }, { refreshTokenHash });
   }
 

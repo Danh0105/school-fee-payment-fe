@@ -35,6 +35,10 @@ export class StudentClass extends BaseEntity {
   @Column({ type: 'timestamptz', nullable: true })
   leftAt: Date | null;
 
-  @Column({ type: 'enum', enum: StudentClassStatus, default: StudentClassStatus.ACTIVE })
+  @Column({
+    type: 'enum',
+    enum: StudentClassStatus,
+    default: StudentClassStatus.ACTIVE,
+  })
   status: StudentClassStatus;
 }

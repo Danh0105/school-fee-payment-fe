@@ -22,6 +22,10 @@ export class AcademicYear extends BaseEntity {
   @Column({ type: 'date' })
   endDate: string;
 
-  @Column({ type: 'enum', enum: AcademicYearStatus, default: AcademicYearStatus.DRAFT })
+  @Column({
+    type: 'enum',
+    enum: AcademicYearStatus,
+    default: AcademicYearStatus.DRAFT,
+  })
   status: AcademicYearStatus;
 }

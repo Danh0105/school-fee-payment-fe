@@ -21,13 +21,23 @@ export class AcademicYearsService {
     return this.repo.save(entity);
   }
 
-  async findAll(query: QueryAcademicYearDto): Promise<PaginatedResult<AcademicYear>> {
-    const qb = this.repo.createQueryBuilder('ay').orderBy(`ay.${query.sortBy ?? 'startDate'}`, query.sortOrder ?? 'DESC');
-    if (query.schoolId) qb.andWhere('ay.schoolId = :schoolId', { schoolId: query.schoolId });
-    if (query.status) qb.andWhere('ay.status = :status', { status: query.status });
-    if (query.search) qb.andWhere('ay.name ILIKE :search', { search: `%${query.search}%` });
+  async findAll(
+    query: QueryAcademicYearDto,
+  ): Promise<PaginatedResult<AcademicYear>> {
+    const qb = this.repo
+      .createQueryBuilder('ay')
+      .orderBy(`ay.${query.sortBy ?? 'startDate'}`, query.sortOrder ?? 'DESC');
+    if (query.schoolId)
+      qb.andWhere('ay.schoolId = :schoolId', { schoolId: query.schoolId });
+    if (query.status)
+      qb.andWhere('ay.status = :status', { status: query.status });
+    if (query.search)
+      qb.andWhere('ay.name ILIKE :search', { search: `%${query.search}%` });
 
-    const [data, total] = await qb.skip(query.skip).take(query.limit).getManyAndCount();
+    const [data, total] = await qb
+      .skip(query.skip)
+      .take(query.limit)
+      .getManyAndCount();
     return new PaginatedResult(data, total, query.page ?? 1, query.limit ?? 20);
   }
 

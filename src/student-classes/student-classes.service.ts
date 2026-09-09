@@ -27,7 +27,9 @@ export class StudentClassesService {
       return this.repo.save(existing);
     }
 
-    return this.repo.save(this.repo.create({ ...dto, status: StudentClassStatus.ACTIVE }));
+    return this.repo.save(
+      this.repo.create({ ...dto, status: StudentClassStatus.ACTIVE }),
+    );
   }
 
   async findActiveStudentsByClass(classId: string): Promise<Student[]> {
@@ -41,6 +43,7 @@ export class StudentClassesService {
   async findStudentIdsByTarget(params: {
     classIds?: string[];
     grade?: string;
+    schoolId?: string;
     academicYearId: string;
   }): Promise<string[]> {
     const qb = this.repo
@@ -49,10 +52,18 @@ export class StudentClassesService {
       .where('sc.academicYearId = :ayId', { ayId: params.academicYearId })
       .andWhere('sc.status = :status', { status: StudentClassStatus.ACTIVE });
 
-    if (params.classIds?.length) qb.andWhere('sc.classId IN (:...classIds)', { classIds: params.classIds });
-    if (params.grade) qb.andWhere('class.grade = :grade', { grade: params.grade });
+    if (params.classIds?.length)
+      qb.andWhere('sc.classId IN (:...classIds)', {
+        classIds: params.classIds,
+      });
+    if (params.grade)
+      qb.andWhere('class.grade = :grade', { grade: params.grade });
+    if (params.schoolId)
+      qb.andWhere('class.schoolId = :schoolId', { schoolId: params.schoolId });
 
-    const rows = await qb.select('sc.studentId', 'studentId').getRawMany<{ studentId: string }>();
+    const rows = await qb
+      .select('sc.studentId', 'studentId')
+      .getRawMany<{ studentId: string }>();
     return rows.map((r) => r.studentId);
   }
 
@@ -64,11 +75,18 @@ export class StudentClassesService {
     });
   }
 
-  async findActiveByStudentAndYear(studentId: string, academicYearId: string): Promise<StudentClass> {
+  async findActiveByStudentAndYear(
+    studentId: string,
+    academicYearId: string,
+  ): Promise<StudentClass> {
     const entity = await this.repo.findOne({
       where: { studentId, academicYearId, status: StudentClassStatus.ACTIVE },
     });
-    if (!entity) throw AppException.notFound(ErrorCode.CLASS_NOT_FOUND, 'Học sinh chưa được xếp lớp trong năm học này');
+    if (!entity)
+      throw AppException.notFound(
+        ErrorCode.CLASS_NOT_FOUND,
+        'Học sinh chưa được xếp lớp trong năm học này',
+      );
     return entity;
   }
 }

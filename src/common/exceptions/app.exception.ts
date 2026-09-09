@@ -4,7 +4,11 @@ import { ErrorCode, ErrorMessages } from '../constants/error-codes';
 export class AppException extends HttpException {
   public readonly errorCode: ErrorCode;
 
-  constructor(errorCode: ErrorCode, status: HttpStatus = HttpStatus.BAD_REQUEST, message?: string) {
+  constructor(
+    errorCode: ErrorCode,
+    status: HttpStatus = HttpStatus.BAD_REQUEST,
+    message?: string,
+  ) {
     super(message ?? ErrorMessages[errorCode], status);
     this.errorCode = errorCode;
   }
@@ -17,11 +21,17 @@ export class AppException extends HttpException {
     return new AppException(errorCode, HttpStatus.CONFLICT, message);
   }
 
-  static forbidden(errorCode: ErrorCode = ErrorCode.FORBIDDEN, message?: string): AppException {
+  static forbidden(
+    errorCode: ErrorCode = ErrorCode.FORBIDDEN,
+    message?: string,
+  ): AppException {
     return new AppException(errorCode, HttpStatus.FORBIDDEN, message);
   }
 
-  static unauthorized(errorCode: ErrorCode = ErrorCode.UNAUTHORIZED, message?: string): AppException {
+  static unauthorized(
+    errorCode: ErrorCode = ErrorCode.UNAUTHORIZED,
+    message?: string,
+  ): AppException {
     return new AppException(errorCode, HttpStatus.UNAUTHORIZED, message);
   }
 

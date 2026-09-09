@@ -43,7 +43,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
           details = anyBody.message;
         }
       }
-      code = status === HttpStatus.BAD_REQUEST ? ErrorCode.VALIDATION_ERROR : ErrorCode.INTERNAL_ERROR;
+      code =
+        status === HttpStatus.BAD_REQUEST
+          ? ErrorCode.VALIDATION_ERROR
+          : ErrorCode.INTERNAL_ERROR;
       if (status === HttpStatus.NOT_FOUND) code = ErrorCode.NOT_FOUND;
       if (status === HttpStatus.UNAUTHORIZED) code = ErrorCode.UNAUTHORIZED;
       if (status === HttpStatus.FORBIDDEN) code = ErrorCode.FORBIDDEN;

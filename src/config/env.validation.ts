@@ -1,5 +1,13 @@
 import { plainToInstance } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  validateSync,
+} from 'class-validator';
 
 class EnvironmentVariables {
   @IsOptional()
@@ -34,14 +42,20 @@ class EnvironmentVariables {
   JWT_REFRESH_SECRET: string;
 }
 
-export function validate(config: Record<string, unknown>): EnvironmentVariables {
+export function validate(
+  config: Record<string, unknown>,
+): EnvironmentVariables {
   const validatedConfig = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true,
   });
-  const errors = validateSync(validatedConfig, { skipMissingProperties: false });
+  const errors = validateSync(validatedConfig, {
+    skipMissingProperties: false,
+  });
 
   if (errors.length > 0) {
-    throw new Error(`Cấu hình biến môi trường không hợp lệ: ${errors.toString()}`);
+    throw new Error(
+      `Cấu hình biến môi trường không hợp lệ: ${errors.toString()}`,
+    );
   }
   return validatedConfig;
 }

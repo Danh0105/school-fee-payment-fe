@@ -19,11 +19,20 @@ export class AuditLogsController {
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
-  async findAll(@Query() query: QueryAuditLogDto): Promise<PaginatedResult<AuditLog>> {
-    const qb = this.auditLogRepository.createQueryBuilder('log').orderBy('log.createdAt', 'DESC');
-    if (query.entityType) qb.andWhere('log.entityType = :entityType', { entityType: query.entityType });
-    if (query.entityId) qb.andWhere('log.entityId = :entityId', { entityId: query.entityId });
-    if (query.userId) qb.andWhere('log.userId = :userId', { userId: query.userId });
+  async findAll(
+    @Query() query: QueryAuditLogDto,
+  ): Promise<PaginatedResult<AuditLog>> {
+    const qb = this.auditLogRepository
+      .createQueryBuilder('log')
+      .orderBy('log.createdAt', 'DESC');
+    if (query.entityType)
+      qb.andWhere('log.entityType = :entityType', {
+        entityType: query.entityType,
+      });
+    if (query.entityId)
+      qb.andWhere('log.entityId = :entityId', { entityId: query.entityId });
+    if (query.userId)
+      qb.andWhere('log.userId = :userId', { userId: query.userId });
 
     const [data, total] = await qb
       .skip(query.skip)

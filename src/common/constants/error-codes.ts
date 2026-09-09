@@ -97,16 +97,19 @@ export const ErrorMessages: Record<ErrorCode, string> = {
 
   [ErrorCode.PAYMENT_ORDER_NOT_FOUND]: 'Không tìm thấy yêu cầu thanh toán',
   [ErrorCode.PAYMENT_ORDER_EXPIRED]: 'Yêu cầu thanh toán đã hết hạn',
-  [ErrorCode.PAYMENT_ORDER_NOT_PENDING]: 'Yêu cầu thanh toán không ở trạng thái chờ',
+  [ErrorCode.PAYMENT_ORDER_NOT_PENDING]:
+    'Yêu cầu thanh toán không ở trạng thái chờ',
 
   [ErrorCode.TRANSACTION_DUPLICATED]: 'Giao dịch đã được ghi nhận trước đó',
   [ErrorCode.TRANSACTION_NOT_FOUND]: 'Không tìm thấy giao dịch',
-  [ErrorCode.TRANSACTION_ALREADY_ALLOCATED]: 'Giao dịch đã được phân bổ toàn bộ',
+  [ErrorCode.TRANSACTION_ALREADY_ALLOCATED]:
+    'Giao dịch đã được phân bổ toàn bộ',
   [ErrorCode.TRANSACTION_ALREADY_MATCHED]: 'Giao dịch đã được đối soát',
   [ErrorCode.TRANSACTION_REVERSED]: 'Giao dịch đã bị đảo',
 
   [ErrorCode.PAYMENT_AMOUNT_INVALID]: 'Số tiền thanh toán không hợp lệ',
-  [ErrorCode.PAYMENT_AMOUNT_EXCEEDS_AVAILABLE]: 'Số tiền phân bổ vượt quá số tiền khả dụng',
+  [ErrorCode.PAYMENT_AMOUNT_EXCEEDS_AVAILABLE]:
+    'Số tiền phân bổ vượt quá số tiền khả dụng',
 
   [ErrorCode.RECEIPT_NOT_FOUND]: 'Không tìm thấy phiếu thu',
   [ErrorCode.RECEIPT_ALREADY_CANCELLED]: 'Phiếu thu đã bị hủy',

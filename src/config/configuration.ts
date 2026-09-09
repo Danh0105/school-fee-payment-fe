@@ -22,10 +22,15 @@ export default () => ({
     bankCode: process.env.BANK_CODE ?? '',
     bankAccountNumber: process.env.BANK_ACCOUNT_NUMBER ?? '',
     bankAccountName: process.env.BANK_ACCOUNT_NAME ?? '',
-    orderExpiresMinutes: parseInt(process.env.PAYMENT_ORDER_EXPIRES_MINUTES ?? '60', 10),
+    orderExpiresMinutes: parseInt(
+      process.env.PAYMENT_ORDER_EXPIRES_MINUTES ?? '60',
+      10,
+    ),
   },
 
   cors: {
-    origins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(',').map((o) => o.trim()),
+    origins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+      .split(',')
+      .map((o) => o.trim()),
   },
 });

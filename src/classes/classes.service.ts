@@ -18,19 +18,33 @@ export class ClassesService {
 
   async create(dto: CreateClassDto): Promise<Class> {
     const existing = await this.repo.findOne({
-      where: { schoolId: dto.schoolId, academicYearId: dto.academicYearId, code: dto.code },
+      where: {
+        schoolId: dto.schoolId,
+        academicYearId: dto.academicYearId,
+        code: dto.code,
+      },
     });
     if (existing) throw AppException.conflict(ErrorCode.CLASS_CODE_EXISTS);
     return this.repo.save(this.repo.create(dto));
   }
 
   async findAll(query: QueryClassDto): Promise<PaginatedResult<Class>> {
-    const qb = this.repo.createQueryBuilder('c').orderBy(`c.${query.sortBy ?? 'code'}`, query.sortOrder ?? 'ASC');
-    if (query.schoolId) qb.andWhere('c.schoolId = :schoolId', { schoolId: query.schoolId });
-    if (query.academicYearId) qb.andWhere('c.academicYearId = :ayId', { ayId: query.academicYearId });
-    if (query.search) qb.andWhere('(c.name ILIKE :search OR c.code ILIKE :search)', { search: `%${query.search}%` });
+    const qb = this.repo
+      .createQueryBuilder('c')
+      .orderBy(`c.${query.sortBy ?? 'code'}`, query.sortOrder ?? 'ASC');
+    if (query.schoolId)
+      qb.andWhere('c.schoolId = :schoolId', { schoolId: query.schoolId });
+    if (query.academicYearId)
+      qb.andWhere('c.academicYearId = :ayId', { ayId: query.academicYearId });
+    if (query.search)
+      qb.andWhere('(c.name ILIKE :search OR c.code ILIKE :search)', {
+        search: `%${query.search}%`,
+      });
 
-    const [data, total] = await qb.skip(query.skip).take(query.limit).getManyAndCount();
+    const [data, total] = await qb
+      .skip(query.skip)
+      .take(query.limit)
+      .getManyAndCount();
     return new PaginatedResult(data, total, query.page ?? 1, query.limit ?? 20);
   }
 
