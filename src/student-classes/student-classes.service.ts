@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { StudentClass } from './entities/student-class.entity';
 import { Student } from '../students/entities/student.entity';
 import { AssignStudentClassDto } from './dto/assign-student-class.dto';
@@ -15,8 +15,12 @@ export class StudentClassesService {
     private readonly repo: Repository<StudentClass>,
   ) {}
 
-  async assign(dto: AssignStudentClassDto): Promise<StudentClass> {
-    const existing = await this.repo.findOne({
+  async assign(
+    dto: AssignStudentClassDto,
+    manager?: EntityManager,
+  ): Promise<StudentClass> {
+    const repo = manager ? manager.getRepository(StudentClass) : this.repo;
+    const existing = await repo.findOne({
       where: { studentId: dto.studentId, academicYearId: dto.academicYearId },
     });
 
@@ -24,11 +28,11 @@ export class StudentClassesService {
       existing.classId = dto.classId;
       existing.status = StudentClassStatus.ACTIVE;
       existing.leftAt = null;
-      return this.repo.save(existing);
+      return repo.save(existing);
     }
 
-    return this.repo.save(
-      this.repo.create({ ...dto, status: StudentClassStatus.ACTIVE }),
+    return repo.save(
+      repo.create({ ...dto, status: StudentClassStatus.ACTIVE }),
     );
   }
 

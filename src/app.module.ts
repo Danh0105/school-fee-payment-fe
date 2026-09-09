@@ -36,6 +36,10 @@ import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { ReceiptsModule } from './receipts/receipts.module';
 import { RefundsModule } from './refunds/refunds.module';
 import { StudentCreditsModule } from './student-credits/student-credits.module';
+import { ImportsModule } from './imports/imports.module';
+import { ReportsModule } from './reports/reports.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { ExportsModule } from './exports/exports.module';
 
 @Module({
   imports: [
@@ -87,6 +91,10 @@ import { StudentCreditsModule } from './student-credits/student-credits.module';
     PaymentTransactionsModule,
     ReconciliationModule,
     RefundsModule,
+    ImportsModule,
+    ReportsModule,
+    DashboardModule,
+    ExportsModule,
   ],
   controllers: [AppController],
   providers: [

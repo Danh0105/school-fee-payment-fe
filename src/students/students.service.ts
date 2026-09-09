@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { EntityManager, IsNull, Repository } from 'typeorm';
 import { Student } from './entities/student.entity';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
@@ -21,22 +21,40 @@ export class StudentsService {
     private readonly sequenceService: SequenceService,
   ) {}
 
-  async create(dto: CreateStudentDto): Promise<Student> {
+  async create(
+    dto: CreateStudentDto,
+    manager?: EntityManager,
+  ): Promise<Student> {
+    const repo = manager ? manager.getRepository(Student) : this.repo;
     const school = await this.schoolsService.findById(dto.schoolId);
 
     let studentCode = dto.studentCode;
     if (!studentCode) {
-      const seq = await this.sequenceService.next(`STUDENT:${school.code}`);
+      const seq = await this.sequenceService.next(
+        `STUDENT:${school.code}`,
+        manager,
+      );
       studentCode = `${school.code}${String(seq).padStart(9, '0')}`;
     } else {
-      const existing = await this.repo.findOne({
+      const existing = await repo.findOne({
         where: { schoolId: dto.schoolId, studentCode, deletedAt: IsNull() },
       });
       if (existing) throw AppException.conflict(ErrorCode.STUDENT_CODE_EXISTS);
     }
 
-    const student = this.repo.create({ ...dto, studentCode });
-    return this.repo.save(student);
+    const student = repo.create({ ...dto, studentCode });
+    return repo.save(student);
+  }
+
+  async findByStudentCode(
+    schoolId: string,
+    studentCode: string,
+    manager?: EntityManager,
+  ): Promise<Student | null> {
+    const repo = manager ? manager.getRepository(Student) : this.repo;
+    return repo.findOne({
+      where: { schoolId, studentCode, deletedAt: IsNull() },
+    });
   }
 
   async findAll(query: QueryStudentDto): Promise<PaginatedResult<Student>> {
