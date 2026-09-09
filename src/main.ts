@@ -33,6 +33,7 @@ async function bootstrap() {
     .addBearerAuth()
     .addTag('Auth')
     .addTag('Users')
+    .addTag('Companies')
     .addTag('Schools')
     .addTag('Academic Years')
     .addTag('Semesters')

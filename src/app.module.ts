@@ -42,6 +42,7 @@ import { ImportsModule } from './imports/imports.module';
 import { ReportsModule } from './reports/reports.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ExportsModule } from './exports/exports.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -99,6 +100,7 @@ import { ExportsModule } from './exports/exports.module';
     ReportsModule,
     DashboardModule,
     ExportsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

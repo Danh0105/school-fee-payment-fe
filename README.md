@@ -24,6 +24,15 @@ JWT · class-validator/class-transformer · ConfigModule · exceljs
 - **AuthModule / UsersModule** — JWT access + refresh token (rotation,
   hash lưu DB), role-based guard (`SUPER_ADMIN`, `ADMIN`, `ACCOUNTANT`,
   `CASHIER`, `VIEWER`) áp dụng qua `@Roles()` + `RolesGuard` toàn cục.
+- **Companies / AccessControlService** — mô hình đa tổ chức: một
+  `Company` (đơn vị kế toán trung tâm) có thể quản lý thu tiền cho nhiều
+  `School`. Một user được scope theo đúng một trong: `SUPER_ADMIN`
+  (toàn hệ thống), `companyId` (mọi trường thuộc công ty đó — kế toán/
+  thủ quỹ trung tâm), `schoolId` (đúng một trường — kế toán riêng của
+  trường), hoặc không có scope (`ADMIN` giữ hành vi cross-school cũ; các
+  role khác bị từ chối mặc định thay vì âm thầm thấy hết dữ liệu).
+  `AccessControlService` là nơi duy nhất quyết định điều này, được áp
+  vào mọi controller đọc/ghi dữ liệu theo trường.
 - **Schools → AcademicYears → Semesters → Classes → Students →
   StudentClasses** — cấu trúc trường học phân theo năm học, học sinh đổi
   lớp theo năm mà không ràng buộc cứng.
@@ -62,6 +71,15 @@ JWT · class-validator/class-transformer · ConfigModule · exceljs
 - **AuditLog** — ghi lại mọi thao tác tài chính quan trọng (tạo công nợ,
   điều chỉnh, miễn giảm, thanh toán thủ công, khớp/hủy khớp giao dịch,
   phát hành/hủy phiếu thu, hoàn tiền, đảo giao dịch).
+- **Notifications (Zalo ZNS)** — sau khi tạo `PaymentOrder` và có QR,
+  `POST /payment-orders/:id/notify-parent` gửi mã QR cho phụ huynh qua
+  Zalo Notification Service (số điện thoại lấy từ `parentPhone`/`phone`
+  của học sinh). Token OA (access + refresh) được lưu DB và tự làm mới
+  theo đúng cơ chế OAuth v4 của Zalo (refresh_token đổi mới sau mỗi lần
+  dùng). Mọi lần gửi — thành công hay thất bại — đều ghi vào
+  `NotificationLog` (`GET /payment-orders/:id/notifications`), không
+  bao giờ để lỗi gửi làm sập request; QR chỉ là phương tiện, backend
+  không tự suy ra đã thanh toán từ việc "đã gửi thông báo".
 
 ## Cài đặt
 
@@ -104,9 +122,11 @@ npm run migration:run
 
 ### Seed dữ liệu mẫu
 
-Tạo trường Tiểu Học Kim Đồng, 3 tài khoản (SUPER_ADMIN/ACCOUNTANT/CASHIER),
-năm học 2026-2027, lớp 1A1/1A2/1A3, khoản thu "Kỹ năng sống" (80.000đ x 9
-tháng), và vài học sinh mẫu:
+Tạo 1 công ty kế toán quản lý 2 trường (Tiểu Học Kim Đồng + Tiểu Học Lê Văn
+Tám, cả hai cấu hình tài khoản VietinBank), tài khoản SUPER_ADMIN +
+ACCOUNTANT/CASHIER theo công ty (truy cập cả 2 trường), năm học 2026-2027,
+lớp 1A1/1A2/1A3, khoản thu "Kỹ năng sống" (80.000đ x 9 tháng), và vài học
+sinh mẫu:
 
 ```bash
 npm run seed
@@ -114,11 +134,11 @@ npm run seed
 
 Tài khoản đăng nhập sau khi seed:
 
-| Vai trò       | Email                     | Mật khẩu       |
-| ------------- | -------------------------- | -------------- |
-| SUPER_ADMIN   | admin@kimdong.edu.vn       | Admin@123456   |
-| ACCOUNTANT    | ketoan@kimdong.edu.vn      | KeToan@123456  |
-| CASHIER       | thuquy@kimdong.edu.vn      | ThuQuy@123456  |
+| Vai trò       | Email                | Mật khẩu       | Phạm vi                          |
+| ------------- | --------------------- | -------------- | --------------------------------- |
+| SUPER_ADMIN   | admin@kimdong.edu.vn  | Admin@123456   | Toàn hệ thống                     |
+| ACCOUNTANT    | ketoan@eduacc.vn      | KeToan@123456  | Cả 2 trường (theo công ty)        |
+| CASHIER       | thuquy@eduacc.vn      | ThuQuy@123456  | Cả 2 trường (theo công ty)        |
 
 ### Chạy
 
@@ -128,6 +148,23 @@ npm run start:dev
 
 Backend chạy tại `http://localhost:3010`. Swagger UI:
 `http://localhost:3010/api/docs`.
+
+### Cấu hình Zalo ZNS (tùy chọn)
+
+Gửi mã QR thanh toán cho phụ huynh qua Zalo cần một Zalo Official Account
+(OA) và App đã đăng ký tại [developers.zalo.me](https://developers.zalo.me),
+cùng một mẫu ZNS (template) đã được Zalo duyệt cho OA đó. Không cấu hình thì
+mọi phần khác của hệ thống vẫn hoạt động bình thường — chỉ riêng
+`POST /payment-orders/:id/notify-parent` trả lỗi `ZALO_NOT_CONFIGURED` thay
+vì gửi được.
+
+1. Tạo App + OA trên Zalo Developers, lấy `app_id`, `app_secret`.
+2. Thực hiện luồng OAuth authorization code của OA đó một lần (thủ công,
+   ngoài hệ thống) để lấy `refresh_token` ban đầu.
+3. Khai báo trong `.env`: `ZALO_OA_ID`, `ZALO_APP_ID`, `ZALO_APP_SECRET`,
+   `ZALO_ZNS_TEMPLATE_ID`, và `ZALO_INITIAL_REFRESH_TOKEN` (giá trị lấy ở
+   bước 2 — chỉ dùng đúng 1 lần để khởi tạo; sau đó backend tự lưu và làm
+   mới token trong bảng `zalo_oauth_tokens`, không cần sửa `.env` nữa).
 
 ## Test
 
@@ -149,6 +186,12 @@ webhook đồng thời (không double-pay), miễn giảm, điều chỉnh tăng
 tiền, đảo giao dịch (reversal), và phân bổ một giao dịch cho nhiều khoản
 công nợ.
 
+`test/company-isolation.e2e-spec.ts` kiểm tra việc cách ly dữ liệu đa tổ
+chức: kế toán theo công ty thấy đúng mọi trường của công ty mình nhưng
+không thấy trường của công ty khác, kế toán theo 1 trường không thấy được
+trường "hàng xóm" cùng công ty, và danh sách học sinh không bao giờ lộ
+chéo giữa các công ty.
+
 ## Migration scripts
 
 ```bash
@@ -161,13 +204,14 @@ npm run migration:revert
 
 ```
 src/
-├── auth/ users/ schools/ academic-years/ semesters/ classes/
+├── auth/ users/ companies/ access-control/
+├── schools/ academic-years/ semesters/ classes/
 ├── students/ student-classes/
 ├── fee-categories/ fee-plans/ fee-assignments/
 ├── receivables/ discounts/ adjustments/ ledger/ student-credits/
 ├── payment-providers/ payment-orders/ payment-transactions/
 ├── payment-allocations/ reconciliation/ receipts/ refunds/
-├── imports/ exports/ reports/ dashboard/ audit-logs/
+├── imports/ exports/ reports/ dashboard/ audit-logs/ notifications/
 ├── common/ (decorators, guards, filters, interceptors, enums, utils)
 └── database/ (data-source, migrations, seeds, sequence service)
 ```
@@ -214,3 +258,6 @@ Query chuẩn cho mọi API danh sách: `page`, `limit`, `search`, `sortBy`,
    `StudentCredit`, không mất và không tự ý gán cho khoản nợ khác.
 6. QR chỉ là phương tiện thanh toán, không phải bằng chứng kế toán — chỉ
    `PaymentTransaction` đã ghi nhận/đối soát mới được dùng để gạch nợ.
+7. Dữ liệu không bao giờ lộ chéo giữa các công ty quản lý — mọi endpoint
+   đọc/ghi theo trường đều đi qua `AccessControlService`, không có
+   "no schoolId filter = trả về tất cả" ở bất kỳ đâu.

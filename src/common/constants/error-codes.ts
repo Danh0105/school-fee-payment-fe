@@ -61,6 +61,10 @@ export enum ErrorCode {
 
   IMPORT_VALIDATION_FAILED = 'IMPORT_VALIDATION_FAILED',
   IMPORT_SESSION_NOT_FOUND = 'IMPORT_SESSION_NOT_FOUND',
+
+  ZALO_NOT_CONFIGURED = 'ZALO_NOT_CONFIGURED',
+  ZALO_SEND_FAILED = 'ZALO_SEND_FAILED',
+  PARENT_PHONE_MISSING = 'PARENT_PHONE_MISSING',
 }
 
 export const ErrorMessages: Record<ErrorCode, string> = {
@@ -129,4 +133,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
 
   [ErrorCode.IMPORT_VALIDATION_FAILED]: 'Dữ liệu import chưa hợp lệ',
   [ErrorCode.IMPORT_SESSION_NOT_FOUND]: 'Không tìm thấy phiên import',
+
+  [ErrorCode.ZALO_NOT_CONFIGURED]: 'Chưa cấu hình kết nối Zalo OA',
+  [ErrorCode.ZALO_SEND_FAILED]: 'Gửi thông báo qua Zalo thất bại',
+  [ErrorCode.PARENT_PHONE_MISSING]: 'Học sinh chưa có số điện thoại phụ huynh',
 };

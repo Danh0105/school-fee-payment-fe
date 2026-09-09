@@ -34,4 +34,16 @@ export default () => ({
       .split(',')
       .map((o) => o.trim()),
   },
+
+  zalo: {
+    oaId: process.env.ZALO_OA_ID ?? '',
+    appId: process.env.ZALO_APP_ID ?? '',
+    appSecret: process.env.ZALO_APP_SECRET ?? '',
+    znsTemplateId: process.env.ZALO_ZNS_TEMPLATE_ID ?? '',
+    // One-time bootstrap value from the OA's initial OAuth authorization —
+    // only read when no token row exists yet in the database. After the
+    // first successful refresh, the DB row is authoritative and this is
+    // never read again.
+    initialRefreshToken: process.env.ZALO_INITIAL_REFRESH_TOKEN ?? '',
+  },
 });
