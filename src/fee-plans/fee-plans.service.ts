@@ -9,6 +9,7 @@ import { QueryFeePlanDto } from './dto/query-fee-plan.dto';
 import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 
 @Injectable()
 export class FeePlansService {
@@ -30,12 +31,18 @@ export class FeePlansService {
     return this.repo.save(entity);
   }
 
-  async findAll(query: QueryFeePlanDto): Promise<PaginatedResult<FeePlan>> {
+  async findAll(
+    query: QueryFeePlanDto,
+    scopedIds?: string[] | null,
+  ): Promise<PaginatedResult<FeePlan>> {
     const qb = this.repo
       .createQueryBuilder('fp')
       .leftJoinAndSelect('fp.feeCategory', 'feeCategory')
       .orderBy(`fp.${query.sortBy ?? 'createdAt'}`, query.sortOrder ?? 'DESC');
 
+    if (!applySchoolScope(qb, 'fp.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
     if (query.schoolId)
       qb.andWhere('fp.schoolId = :schoolId', { schoolId: query.schoolId });
     if (query.academicYearId)

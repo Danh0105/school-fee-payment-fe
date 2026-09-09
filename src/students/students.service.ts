@@ -11,6 +11,7 @@ import { ErrorCode } from '../common/constants/error-codes';
 import { SchoolsService } from '../schools/schools.service';
 import { SequenceService } from '../database/sequence.service';
 import { StudentClass } from '../student-classes/entities/student-class.entity';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 
 @Injectable()
 export class StudentsService {
@@ -57,7 +58,10 @@ export class StudentsService {
     });
   }
 
-  async findAll(query: QueryStudentDto): Promise<PaginatedResult<Student>> {
+  async findAll(
+    query: QueryStudentDto,
+    scopedIds?: string[] | null,
+  ): Promise<PaginatedResult<Student>> {
     const qb = this.repo
       .createQueryBuilder('student')
       .where('student.deletedAt IS NULL')
@@ -66,6 +70,9 @@ export class StudentsService {
         query.sortOrder ?? 'DESC',
       );
 
+    if (!applySchoolScope(qb, 'student.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
     if (query.schoolId)
       qb.andWhere('student.schoolId = :schoolId', { schoolId: query.schoolId });
     if (query.status)

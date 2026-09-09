@@ -13,6 +13,7 @@ import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 import {
   PaymentOrderStatus,
   PaymentTransactionStatus,
@@ -33,12 +34,17 @@ export class ReconciliationService {
 
   async listUnmatched(
     query: PaginationQueryDto,
+    scopedIds?: string[] | null,
   ): Promise<PaginatedResult<BankReconciliation>> {
     const qb = this.repo
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.paymentTransaction', 'transaction')
       .where('r.status = :status', { status: ReconciliationStatus.UNMATCHED })
       .orderBy('transaction.transactionTime', 'DESC');
+
+    if (!applySchoolScope(qb, 'transaction.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
 
     const [data, total] = await qb
       .skip(query.skip)

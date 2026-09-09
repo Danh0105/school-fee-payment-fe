@@ -12,12 +12,15 @@ export class ExportsService {
     return Buffer.from(arrayBuffer);
   }
 
-  async exportReceivables(filter: ReportFilterDto): Promise<Buffer> {
-    const { data } = await this.reportsService.listReceivableRows(filter, {
-      page: 1,
-      limit: 10000,
-      skip: 0,
-    });
+  async exportReceivables(
+    filter: ReportFilterDto,
+    scopedIds?: string[] | null,
+  ): Promise<Buffer> {
+    const { data } = await this.reportsService.listReceivableRows(
+      filter,
+      { page: 1, limit: 10000, skip: 0 },
+      scopedIds,
+    );
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Công nợ');
@@ -48,8 +51,11 @@ export class ExportsService {
     return this.workbookToBuffer(workbook);
   }
 
-  async exportPayments(filter: ReportFilterDto): Promise<Buffer> {
-    const summary = await this.reportsService.paymentsReport(filter);
+  async exportPayments(
+    filter: ReportFilterDto,
+    scopedIds?: string[] | null,
+  ): Promise<Buffer> {
+    const summary = await this.reportsService.paymentsReport(filter, scopedIds);
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Thanh toán');
@@ -67,8 +73,14 @@ export class ExportsService {
     return this.workbookToBuffer(workbook);
   }
 
-  async exportDebtReport(filter: ReportFilterDto): Promise<Buffer> {
-    const report = await this.reportsService.receivablesReport(filter);
+  async exportDebtReport(
+    filter: ReportFilterDto,
+    scopedIds?: string[] | null,
+  ): Promise<Buffer> {
+    const report = await this.reportsService.receivablesReport(
+      filter,
+      scopedIds,
+    );
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Báo cáo công nợ');

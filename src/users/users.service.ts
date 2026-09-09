@@ -41,6 +41,7 @@ export class UsersService {
       fullName: dto.fullName,
       role: dto.role,
       schoolId: dto.schoolId ?? null,
+      companyId: dto.companyId ?? null,
     });
     return this.userRepository.save(user);
   }

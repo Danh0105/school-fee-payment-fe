@@ -5,4 +5,5 @@ export interface AuthUser {
   email: string;
   role: Role;
   schoolId: string | null;
+  companyId: string | null;
 }

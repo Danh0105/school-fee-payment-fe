@@ -1,8 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { EntityStatus } from '../../common/enums/status.enum';
 
 export class CreateSchoolDto {
+  @ApiPropertyOptional({
+    description:
+      'Managing company, if fee collection is run by a central back-office team',
+  })
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
+
   @ApiProperty()
   @IsString()
   code: string;

@@ -12,6 +12,7 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 import {
   AdjustmentStatus,
   ReceivableStatus,
@@ -65,10 +66,13 @@ export class ReportsService {
     private readonly classRepo: Repository<Class>,
   ) {}
 
+  /** Returns false when the caller's school scope excludes everything — the query must not run. */
   private applyFilters(
     qb: SelectQueryBuilder<StudentReceivable>,
     filter: ReportFilterDto,
-  ): void {
+    scopedIds?: string[] | null,
+  ): boolean {
+    if (!applySchoolScope(qb, 'r.schoolId', scopedIds ?? null)) return false;
     if (filter.schoolId)
       qb.andWhere('r.schoolId = :schoolId', { schoolId: filter.schoolId });
     if (filter.academicYearId)
@@ -101,11 +105,33 @@ export class ReportsService {
             .getQuery()}`,
       ).setParameter('classId', filter.classId);
     }
+    return true;
   }
 
-  async receivablesReport(filter: ReportFilterDto): Promise<ReceivablesReport> {
+  private emptyReceivablesReport(): ReceivablesReport {
+    return {
+      totalReceivable: '0.00',
+      totalDiscount: '0.00',
+      totalAdjustmentIncrease: '0.00',
+      totalAdjustmentDecrease: '0.00',
+      totalDue: '0.00',
+      totalPaid: '0.00',
+      totalOutstanding: '0.00',
+      studentsPaid: 0,
+      studentsUnpaid: 0,
+      studentsPartial: 0,
+      collectionRate: 0,
+    };
+  }
+
+  async receivablesReport(
+    filter: ReportFilterDto,
+    scopedIds?: string[] | null,
+  ): Promise<ReceivablesReport> {
+    if (scopedIds && scopedIds.length === 0)
+      return this.emptyReceivablesReport();
     const qb = this.receivableRepo.createQueryBuilder('r');
-    this.applyFilters(qb, filter);
+    this.applyFilters(qb, filter, scopedIds);
 
     const totals = await qb
       .select('COALESCE(SUM(r.originalAmount), 0)', 'totalReceivable')
@@ -127,7 +153,7 @@ export class ReportsService {
     const receivableIdsQb = this.receivableRepo
       .createQueryBuilder('r')
       .select('r.id');
-    this.applyFilters(receivableIdsQb, filter);
+    this.applyFilters(receivableIdsQb, filter, scopedIds);
 
     const adjustmentTotals = await this.adjustmentRepo
       .createQueryBuilder('a')
@@ -170,11 +196,17 @@ export class ReportsService {
     };
   }
 
-  async paymentsReport(filter: ReportFilterDto): Promise<{
+  async paymentsReport(
+    filter: ReportFilterDto,
+    scopedIds?: string[] | null,
+  ): Promise<{
     totalAmount: string;
     transactionCount: number;
   }> {
     const qb = this.transactionRepo.createQueryBuilder('t');
+    if (!applySchoolScope(qb, 't.schoolId', scopedIds ?? null)) {
+      return { totalAmount: '0.00', transactionCount: 0 };
+    }
     if (filter.schoolId)
       qb.andWhere('t.schoolId = :schoolId', { schoolId: filter.schoolId });
     if (filter.fromDate)
@@ -275,13 +307,21 @@ export class ReportsService {
   async listReceivableRows(
     filter: ReportFilterDto,
     pagination: PaginationQueryDto,
+    scopedIds?: string[] | null,
   ): Promise<PaginatedResult<StudentReceivable>> {
     const qb = this.receivableRepo
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.student', 'student')
       .leftJoinAndSelect('r.feePlan', 'feePlan')
       .orderBy('r.createdAt', 'DESC');
-    this.applyFilters(qb, filter);
+    if (!this.applyFilters(qb, filter, scopedIds)) {
+      return new PaginatedResult(
+        [],
+        0,
+        pagination.page ?? 1,
+        pagination.limit ?? 20,
+      );
+    }
 
     const [data, total] = await qb
       .skip(pagination.skip)

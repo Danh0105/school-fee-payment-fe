@@ -14,6 +14,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { CompaniesModule } from './companies/companies.module';
+import { AccessControlModule } from './access-control/access-control.module';
 import { SchoolsModule } from './schools/schools.module';
 import { AcademicYearsModule } from './academic-years/academic-years.module';
 import { SemestersModule } from './semesters/semesters.module';
@@ -68,9 +70,11 @@ import { ExportsModule } from './exports/exports.module';
     }),
     DatabaseModule,
     AuditLogsModule,
+    CompaniesModule,
+    SchoolsModule,
+    AccessControlModule,
     AuthModule,
     UsersModule,
-    SchoolsModule,
     AcademicYearsModule,
     SemestersModule,
     ClassesModule,

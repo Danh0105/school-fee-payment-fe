@@ -13,6 +13,7 @@ import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { QueryPaymentTransactionDto } from './dto/query-payment-transaction.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 import {
   PaymentOrderStatus,
   PaymentTransactionStatus,
@@ -229,6 +230,7 @@ export class PaymentTransactionsService {
 
   async findAll(
     query: QueryPaymentTransactionDto,
+    scopedIds?: string[] | null,
   ): Promise<PaginatedResult<PaymentTransaction>> {
     const qb = this.repo
       .createQueryBuilder('t')
@@ -236,6 +238,9 @@ export class PaymentTransactionsService {
         `t.${query.sortBy ?? 'transactionTime'}`,
         query.sortOrder ?? 'DESC',
       );
+    if (!applySchoolScope(qb, 't.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
     if (query.schoolId)
       qb.andWhere('t.schoolId = :schoolId', { schoolId: query.schoolId });
     if (query.status)

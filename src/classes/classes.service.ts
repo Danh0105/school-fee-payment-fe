@@ -8,6 +8,7 @@ import { QueryClassDto } from './dto/query-class.dto';
 import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 
 @Injectable()
 export class ClassesService {
@@ -28,10 +29,16 @@ export class ClassesService {
     return this.repo.save(this.repo.create(dto));
   }
 
-  async findAll(query: QueryClassDto): Promise<PaginatedResult<Class>> {
+  async findAll(
+    query: QueryClassDto,
+    scopedIds?: string[] | null,
+  ): Promise<PaginatedResult<Class>> {
     const qb = this.repo
       .createQueryBuilder('c')
       .orderBy(`c.${query.sortBy ?? 'code'}`, query.sortOrder ?? 'ASC');
+    if (!applySchoolScope(qb, 'c.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
     if (query.schoolId)
       qb.andWhere('c.schoolId = :schoolId', { schoolId: query.schoolId });
     if (query.academicYearId)

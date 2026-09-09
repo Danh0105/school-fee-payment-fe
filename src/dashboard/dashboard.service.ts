@@ -7,6 +7,7 @@ import { PaymentTransaction } from '../payment-transactions/entities/payment-tra
 import { Class } from '../classes/entities/class.entity';
 import { FeeCategory } from '../fee-categories/entities/fee-category.entity';
 import { StudentClass } from '../student-classes/entities/student-class.entity';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 import {
   DashboardFilterDto,
   DashboardSeriesQueryDto,
@@ -25,37 +26,49 @@ export class DashboardService {
     private readonly feeCategoryRepo: Repository<FeeCategory>,
   ) {}
 
-  async summary(filter: DashboardFilterDto) {
+  async summary(filter: DashboardFilterDto, scopedIds?: string[] | null) {
     const qb = this.receivableRepo.createQueryBuilder('r');
+    const inScope = applySchoolScope(qb, 'r.schoolId', scopedIds ?? null);
     if (filter.schoolId)
       qb.andWhere('r.schoolId = :schoolId', { schoolId: filter.schoolId });
     if (filter.academicYearId)
       qb.andWhere('r.academicYearId = :ayId', { ayId: filter.academicYearId });
 
-    const totals = await qb
-      .select('COALESCE(SUM(r.amountDue), 0)', 'totalReceivable')
-      .addSelect('COALESCE(SUM(r.amountPaid), 0)', 'totalPaid')
-      .addSelect('COALESCE(SUM(r.amountOutstanding), 0)', 'totalOutstanding')
-      .addSelect(`COUNT(*) FILTER (WHERE r.status = 'PAID')`, 'studentsPaid')
-      .addSelect(
-        `COUNT(*) FILTER (WHERE r.status = 'UNPAID' OR r.status = 'OVERDUE')`,
-        'studentsUnpaid',
-      )
-      .addSelect(
-        `COUNT(*) FILTER (WHERE r.status = 'PARTIALLY_PAID')`,
-        'studentsPartial',
-      )
-      .getRawOne<Record<string, string>>();
+    const totals = inScope
+      ? await qb
+          .select('COALESCE(SUM(r.amountDue), 0)', 'totalReceivable')
+          .addSelect('COALESCE(SUM(r.amountPaid), 0)', 'totalPaid')
+          .addSelect(
+            'COALESCE(SUM(r.amountOutstanding), 0)',
+            'totalOutstanding',
+          )
+          .addSelect(
+            `COUNT(*) FILTER (WHERE r.status = 'PAID')`,
+            'studentsPaid',
+          )
+          .addSelect(
+            `COUNT(*) FILTER (WHERE r.status = 'UNPAID' OR r.status = 'OVERDUE')`,
+            'studentsUnpaid',
+          )
+          .addSelect(
+            `COUNT(*) FILTER (WHERE r.status = 'PARTIALLY_PAID')`,
+            'studentsPartial',
+          )
+          .getRawOne<Record<string, string>>()
+      : undefined;
 
     const txQb = this.transactionRepo
       .createQueryBuilder('t')
       .where(`t.transactionTime >= date_trunc('day', now())`);
+    const txInScope = applySchoolScope(txQb, 't.schoolId', scopedIds ?? null);
     if (filter.schoolId)
       txQb.andWhere('t.schoolId = :schoolId', { schoolId: filter.schoolId });
-    const today = await txQb
-      .select('COUNT(*)', 'transactionsToday')
-      .addSelect('COALESCE(SUM(t.amount), 0)', 'amountToday')
-      .getRawOne<{ transactionsToday: string; amountToday: string }>();
+    const today = txInScope
+      ? await txQb
+          .select('COUNT(*)', 'transactionsToday')
+          .addSelect('COALESCE(SUM(t.amount), 0)', 'amountToday')
+          .getRawOne<{ transactionsToday: string; amountToday: string }>()
+      : undefined;
 
     const totalReceivable = new Decimal(totals?.totalReceivable ?? 0);
     const totalPaid = new Decimal(totals?.totalPaid ?? 0);
@@ -79,12 +92,16 @@ export class DashboardService {
     };
   }
 
-  async revenueByDay(filter: DashboardSeriesQueryDto) {
+  async revenueByDay(
+    filter: DashboardSeriesQueryDto,
+    scopedIds?: string[] | null,
+  ) {
     const qb = this.transactionRepo
       .createQueryBuilder('t')
       .where(`t.transactionTime >= now() - (:days || ' days')::interval`, {
         days: filter.days ?? 30,
       });
+    if (!applySchoolScope(qb, 't.schoolId', scopedIds ?? null)) return [];
     if (filter.schoolId)
       qb.andWhere('t.schoolId = :schoolId', { schoolId: filter.schoolId });
 
@@ -103,12 +120,16 @@ export class DashboardService {
     }));
   }
 
-  async revenueByMonth(filter: DashboardSeriesQueryDto) {
+  async revenueByMonth(
+    filter: DashboardSeriesQueryDto,
+    scopedIds?: string[] | null,
+  ) {
     const qb = this.transactionRepo
       .createQueryBuilder('t')
       .where(`t.transactionTime >= now() - (:months || ' months')::interval`, {
         months: filter.months ?? 12,
       });
+    if (!applySchoolScope(qb, 't.schoolId', scopedIds ?? null)) return [];
     if (filter.schoolId)
       qb.andWhere('t.schoolId = :schoolId', { schoolId: filter.schoolId });
 
@@ -127,8 +148,9 @@ export class DashboardService {
     }));
   }
 
-  async byClass(filter: DashboardFilterDto) {
+  async byClass(filter: DashboardFilterDto, scopedIds?: string[] | null) {
     const classQb = this.classRepo.createQueryBuilder('c');
+    if (!applySchoolScope(classQb, 'c.schoolId', scopedIds ?? null)) return [];
     if (filter.schoolId)
       classQb.andWhere('c.schoolId = :schoolId', { schoolId: filter.schoolId });
     if (filter.academicYearId)
@@ -186,10 +208,12 @@ export class DashboardService {
     return results;
   }
 
-  async byFeeCategory(filter: DashboardFilterDto) {
+  async byFeeCategory(filter: DashboardFilterDto, scopedIds?: string[] | null) {
     const categoryQb = this.feeCategoryRepo
       .createQueryBuilder('fc')
       .where('fc.deletedAt IS NULL');
+    if (!applySchoolScope(categoryQb, 'fc.schoolId', scopedIds ?? null))
+      return [];
     if (filter.schoolId)
       categoryQb.andWhere('fc.schoolId = :schoolId', {
         schoolId: filter.schoolId,

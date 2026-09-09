@@ -6,6 +6,7 @@ import { ReconciliationController } from './reconciliation.controller';
 import { PaymentAllocationsModule } from '../payment-allocations/payment-allocations.module';
 import { ReceiptsModule } from '../receipts/receipts.module';
 import { StudentCreditsModule } from '../student-credits/student-credits.module';
+import { PaymentTransactionsModule } from '../payment-transactions/payment-transactions.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { StudentCreditsModule } from '../student-credits/student-credits.module'
     PaymentAllocationsModule,
     ReceiptsModule,
     StudentCreditsModule,
+    PaymentTransactionsModule,
   ],
   providers: [ReconciliationService],
   controllers: [ReconciliationController],

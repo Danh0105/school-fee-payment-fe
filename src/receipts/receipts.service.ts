@@ -11,6 +11,7 @@ import { ErrorCode } from '../common/constants/error-codes';
 import { PaymentMethod, ReceiptStatus } from '../common/enums/status.enum';
 import { SequenceService } from '../database/sequence.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 
 export interface IssueReceiptInput {
   schoolId: string;
@@ -98,12 +99,18 @@ export class ReceiptsService {
     return saved;
   }
 
-  async findAll(query: QueryReceiptDto): Promise<PaginatedResult<Receipt>> {
+  async findAll(
+    query: QueryReceiptDto,
+    scopedIds?: string[] | null,
+  ): Promise<PaginatedResult<Receipt>> {
     const qb = this.repo
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.student', 'student')
       .orderBy(`r.${query.sortBy ?? 'issuedAt'}`, query.sortOrder ?? 'DESC');
 
+    if (!applySchoolScope(qb, 'r.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
     if (query.schoolId)
       qb.andWhere('r.schoolId = :schoolId', { schoolId: query.schoolId });
     if (query.studentId)

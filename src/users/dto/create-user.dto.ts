@@ -28,9 +28,18 @@ export class CreateUserDto {
   role: Role;
 
   @ApiPropertyOptional({
-    description: 'Null for SUPER_ADMIN / ADMIN with cross-school access',
+    description:
+      'Scope this user to a single school. Leave empty for SUPER_ADMIN, or when scoping via companyId instead.',
   })
   @IsOptional()
   @IsUUID()
   schoolId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Scope this user to every school under this company (typical for a central ACCOUNTANT/CASHIER team). Mutually exclusive with schoolId in practice.',
+  })
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
 }

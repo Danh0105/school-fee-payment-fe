@@ -18,8 +18,13 @@ export class User extends BaseEntity {
   @Column({ type: 'enum', enum: Role, default: Role.VIEWER })
   role: Role;
 
+  /** Single-school scope. Mutually exclusive in practice with companyId — see AccessControlService. */
   @Column({ type: 'uuid', nullable: true })
   schoolId: string | null;
+
+  /** Multi-school scope: access to every school under this company. SUPER_ADMIN needs neither (global). */
+  @Column({ type: 'uuid', nullable: true })
+  companyId: string | null;
 
   @Column({ type: 'enum', enum: EntityStatus, default: EntityStatus.ACTIVE })
   status: EntityStatus;

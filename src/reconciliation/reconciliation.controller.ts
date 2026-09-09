@@ -13,6 +13,9 @@ import type { Request } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Role } from '../common/enums/role.enum';
+import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AccessControlService } from '../access-control/access-control.service';
+import { PaymentTransactionsService } from '../payment-transactions/payment-transactions.service';
 import { ReconciliationService } from './reconciliation.service';
 import { MatchTransactionDto } from './dto/match-transaction.dto';
 import { UnmatchTransactionDto } from './dto/unmatch-transaction.dto';
@@ -22,24 +25,39 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 @ApiBearerAuth()
 @Controller('reconciliation')
 export class ReconciliationController {
-  constructor(private readonly service: ReconciliationService) {}
+  constructor(
+    private readonly service: ReconciliationService,
+    private readonly paymentTransactionsService: PaymentTransactionsService,
+    private readonly accessControlService: AccessControlService,
+  ) {}
 
   @Get('unmatched')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
-  listUnmatched(@Query() query: PaginationQueryDto) {
-    return this.service.listUnmatched(query);
+  async listUnmatched(
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const scopedIds =
+      await this.accessControlService.getAccessibleSchoolIds(user);
+    return this.service.listUnmatched(query, scopedIds);
   }
 
   @Post(':transactionId/match')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
-  match(
+  async match(
     @Param('transactionId', ParseUUIDPipe) transactionId: string,
     @Body() dto: MatchTransactionDto,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
+    const transaction =
+      await this.paymentTransactionsService.findById(transactionId);
+    await this.accessControlService.assertSchoolAccess(
+      user,
+      transaction.schoolId,
+    );
     return this.service.match(transactionId, dto.paymentOrderId, {
-      userId,
+      userId: user.id,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -47,14 +65,20 @@ export class ReconciliationController {
 
   @Post(':transactionId/unmatch')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
-  unmatch(
+  async unmatch(
     @Param('transactionId', ParseUUIDPipe) transactionId: string,
     @Body() dto: UnmatchTransactionDto,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
+    const transaction =
+      await this.paymentTransactionsService.findById(transactionId);
+    await this.accessControlService.assertSchoolAccess(
+      user,
+      transaction.schoolId,
+    );
     return this.service.unmatch(transactionId, dto.reason, {
-      userId,
+      userId: user.id,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

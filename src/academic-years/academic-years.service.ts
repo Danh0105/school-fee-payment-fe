@@ -8,6 +8,7 @@ import { QueryAcademicYearDto } from './dto/query-academic-year.dto';
 import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 
 @Injectable()
 export class AcademicYearsService {
@@ -23,10 +24,14 @@ export class AcademicYearsService {
 
   async findAll(
     query: QueryAcademicYearDto,
+    scopedIds?: string[] | null,
   ): Promise<PaginatedResult<AcademicYear>> {
     const qb = this.repo
       .createQueryBuilder('ay')
       .orderBy(`ay.${query.sortBy ?? 'startDate'}`, query.sortOrder ?? 'DESC');
+    if (!applySchoolScope(qb, 'ay.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
     if (query.schoolId)
       qb.andWhere('ay.schoolId = :schoolId', { schoolId: query.schoolId });
     if (query.status)

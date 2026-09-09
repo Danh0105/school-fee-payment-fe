@@ -77,6 +77,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       schoolId: user.schoolId,
+      companyId: user.companyId,
     };
 
     const expiresIn = this.config.get<string>('jwt.expiresIn')!;

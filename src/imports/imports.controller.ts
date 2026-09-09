@@ -15,6 +15,8 @@ import type { Request } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Role } from '../common/enums/role.enum';
+import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AccessControlService } from '../access-control/access-control.service';
 import { ImportsService } from './imports.service';
 import { PreviewImportDto } from './dto/preview-import.dto';
 import { ConfirmImportDto } from './dto/confirm-import.dto';
@@ -24,29 +26,35 @@ import { ImportSessionType } from './entities/import-session.entity';
 @ApiBearerAuth()
 @Controller('imports')
 export class ImportsController {
-  constructor(private readonly service: ImportsService) {}
+  constructor(
+    private readonly service: ImportsService,
+    private readonly accessControlService: AccessControlService,
+  ) {}
 
   @Post('excel/preview')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
-  preview(
+  async preview(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: PreviewImportDto,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.service.preview(file, dto, { userId });
+    await this.accessControlService.assertSchoolAccess(user, dto.schoolId);
+    return this.service.preview(file, dto, { userId: user.id });
   }
 
   @Post('excel/confirm')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
-  confirm(
+  async confirm(
     @Body() dto: ConfirmImportDto,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
+    const session = await this.service.findById(dto.importSessionId);
+    await this.accessControlService.assertSchoolAccess(user, session.schoolId);
     return this.service.confirm(dto.importSessionId, {
-      userId,
+      userId: user.id,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -56,15 +64,16 @@ export class ImportsController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
-  previewStudents(
+  async previewStudents(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: PreviewImportDto,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: AuthUser,
   ) {
+    await this.accessControlService.assertSchoolAccess(user, dto.schoolId);
     return this.service.preview(
       file,
       { ...dto, type: ImportSessionType.STUDENTS },
-      { userId },
+      { userId: user.id },
     );
   }
 
@@ -72,21 +81,27 @@ export class ImportsController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
-  previewReceivables(
+  async previewReceivables(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: PreviewImportDto,
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: AuthUser,
   ) {
+    await this.accessControlService.assertSchoolAccess(user, dto.schoolId);
     return this.service.preview(
       file,
       { ...dto, type: ImportSessionType.RECEIVABLES },
-      { userId },
+      { userId: user.id },
     );
   }
 
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findById(id);
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const session = await this.service.findById(id);
+    await this.accessControlService.assertSchoolAccess(user, session.schoolId);
+    return session;
   }
 }

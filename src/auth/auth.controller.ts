@@ -24,6 +24,7 @@ export class AuthController {
         fullName: user.fullName,
         role: user.role,
         schoolId: user.schoolId,
+        companyId: user.companyId,
       },
     };
   }

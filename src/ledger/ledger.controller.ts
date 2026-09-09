@@ -1,16 +1,30 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import Decimal from 'decimal.js';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AccessControlService } from '../access-control/access-control.service';
+import { StudentsService } from '../students/students.service';
 import { LedgerService } from './ledger.service';
 
 @ApiTags('Students')
 @ApiBearerAuth()
 @Controller('students/:id/ledger')
 export class LedgerController {
-  constructor(private readonly ledgerService: LedgerService) {}
+  constructor(
+    private readonly ledgerService: LedgerService,
+    private readonly studentsService: StudentsService,
+    private readonly accessControlService: AccessControlService,
+  ) {}
 
   @Get()
-  async getLedger(@Param('id', ParseUUIDPipe) studentId: string) {
+  async getLedger(
+    @Param('id', ParseUUIDPipe) studentId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const student = await this.studentsService.findById(studentId);
+    await this.accessControlService.assertSchoolAccess(user, student.schoolId);
+
     const entries = await this.ledgerService.findByStudent(studentId);
     let balance = new Decimal(0);
     const rows = entries.map((e) => {

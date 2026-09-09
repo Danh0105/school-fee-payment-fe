@@ -8,6 +8,7 @@ import { QuerySchoolDto } from './dto/query-school.dto';
 import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 
 @Injectable()
 export class SchoolsService {
@@ -27,7 +28,10 @@ export class SchoolsService {
     return this.schoolRepository.save(school);
   }
 
-  async findAll(query: QuerySchoolDto): Promise<PaginatedResult<School>> {
+  async findAll(
+    query: QuerySchoolDto,
+    scopedIds?: string[] | null,
+  ): Promise<PaginatedResult<School>> {
     const qb = this.schoolRepository
       .createQueryBuilder('school')
       .where('school.deletedAt IS NULL')
@@ -36,8 +40,16 @@ export class SchoolsService {
         query.sortOrder ?? 'DESC',
       );
 
+    if (!applySchoolScope(qb, 'school.id', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
+
     if (query.status)
       qb.andWhere('school.status = :status', { status: query.status });
+    if (query.companyId)
+      qb.andWhere('school.companyId = :companyId', {
+        companyId: query.companyId,
+      });
     if (query.search) {
       qb.andWhere('(school.name ILIKE :search OR school.code ILIKE :search)', {
         search: `%${query.search}%`,
@@ -49,6 +61,14 @@ export class SchoolsService {
       .take(query.limit)
       .getManyAndCount();
     return new PaginatedResult(data, total, query.page ?? 1, query.limit ?? 20);
+  }
+
+  async findIdsByCompany(companyId: string): Promise<string[]> {
+    const rows = await this.schoolRepository.find({
+      where: { companyId, deletedAt: IsNull() },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 
   async findByBankAccountNumber(

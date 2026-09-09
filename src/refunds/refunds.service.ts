@@ -13,6 +13,7 @@ import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 import {
   LedgerEntryType,
   RefundStatus,
@@ -148,10 +149,17 @@ export class RefundsService {
     });
   }
 
-  async findAll(query: PaginationQueryDto): Promise<PaginatedResult<Refund>> {
+  async findAll(
+    query: PaginationQueryDto,
+    scopedIds?: string[] | null,
+  ): Promise<PaginatedResult<Refund>> {
     const qb = this.repo
       .createQueryBuilder('r')
+      .innerJoin('r.paymentTransaction', 'transaction')
       .orderBy(`r.${query.sortBy ?? 'createdAt'}`, query.sortOrder ?? 'DESC');
+    if (!applySchoolScope(qb, 'transaction.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
     const [data, total] = await qb
       .skip(query.skip)
       .take(query.limit)
@@ -160,7 +168,10 @@ export class RefundsService {
   }
 
   async findById(id: string): Promise<Refund> {
-    const refund = await this.repo.findOne({ where: { id } });
+    const refund = await this.repo.findOne({
+      where: { id },
+      relations: { paymentTransaction: true },
+    });
     if (!refund) throw AppException.notFound(ErrorCode.REFUND_NOT_FOUND);
     return refund;
   }

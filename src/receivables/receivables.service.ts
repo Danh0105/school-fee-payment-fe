@@ -12,6 +12,7 @@ import { SequenceService } from '../database/sequence.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { LedgerEntryType } from '../common/enums/status.enum';
 import { StudentClass } from '../student-classes/entities/student-class.entity';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 
 export interface CreateReceivableInput {
   schoolId: string;
@@ -104,6 +105,7 @@ export class ReceivablesService {
 
   async findAll(
     query: QueryReceivableDto,
+    scopedIds?: string[] | null,
   ): Promise<PaginatedResult<StudentReceivable>> {
     const qb = this.repo
       .createQueryBuilder('r')
@@ -111,6 +113,9 @@ export class ReceivablesService {
       .leftJoinAndSelect('r.feePlan', 'feePlan')
       .orderBy(`r.${query.sortBy ?? 'createdAt'}`, query.sortOrder ?? 'DESC');
 
+    if (!applySchoolScope(qb, 'r.schoolId', scopedIds ?? null)) {
+      return new PaginatedResult([], 0, query.page ?? 1, query.limit ?? 20);
+    }
     if (query.schoolId)
       qb.andWhere('r.schoolId = :schoolId', { schoolId: query.schoolId });
     if (query.academicYearId)

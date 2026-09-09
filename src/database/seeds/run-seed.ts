@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { AppModule } from '../../app.module';
+import { CompaniesService } from '../../companies/companies.service';
 import { SchoolsService } from '../../schools/schools.service';
 import { UsersService } from '../../users/users.service';
 import { AcademicYearsService } from '../../academic-years/academic-years.service';
@@ -9,6 +10,7 @@ import { StudentsService } from '../../students/students.service';
 import { StudentClassesService } from '../../student-classes/student-classes.service';
 import { FeeCategoriesService } from '../../fee-categories/fee-categories.service';
 import { FeePlansService } from '../../fee-plans/fee-plans.service';
+import { Company } from '../../companies/entities/company.entity';
 import { School } from '../../schools/entities/school.entity';
 import { AcademicYear } from '../../academic-years/entities/academic-year.entity';
 import { FeeCategory } from '../../fee-categories/entities/fee-category.entity';
@@ -22,12 +24,18 @@ import {
 
 const logger = new Logger('Seed');
 
+// VietinBank's NAPAS/VietQR bank BIN — see https://www.napas.com.vn (Ngân
+// hàng TMCP Công Thương Việt Nam). Any school's bankCode can point at any
+// participating bank; VietinBank is used here as the seed's example.
+const VIETINBANK_BIN = '970415';
+
 async function run() {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
 
   try {
+    const companiesService = app.get(CompaniesService);
     const schoolsService = app.get(SchoolsService);
     const usersService = app.get(UsersService);
     const academicYearsService = app.get(AcademicYearsService);
@@ -37,7 +45,26 @@ async function run() {
     const feeCategoriesService = app.get(FeeCategoriesService);
     const feePlansService = app.get(FeePlansService);
 
-    logger.log('Seeding school...');
+    logger.log('Seeding managing company...');
+    let company: Company;
+    const existingCompanies = await companiesService.findAll({
+      page: 1,
+      limit: 1,
+      search: 'EDUACC',
+      skip: 0,
+    });
+    if (existingCompanies.data.length > 0) {
+      company = existingCompanies.data[0];
+    } else {
+      company = await companiesService.create({
+        code: 'EDUACC',
+        name: 'Công ty Dịch vụ Kế toán Giáo dục ABC',
+        contactEmail: 'ketoan@eduacc.vn',
+      });
+    }
+    logger.log(`Company: ${company.code} (${company.id})`);
+
+    logger.log('Seeding schools (both managed by the same company)...');
     let school: School;
     const existingSchools = await schoolsService.findAll({
       page: 1,
@@ -47,18 +74,54 @@ async function run() {
     });
     if (existingSchools.data.length > 0) {
       school = existingSchools.data[0];
+      if (school.companyId !== company.id) {
+        school = await schoolsService.update(school.id, {
+          companyId: company.id,
+        });
+      }
     } else {
       school = await schoolsService.create({
+        companyId: company.id,
         code: 'KIMDONG',
         name: 'Trường Tiểu Học Kim Đồng',
         address: '123 Đường Kim Đồng, Quận 1, TP.HCM',
-        bankName: 'Ngân hàng TMCP Ngoại Thương Việt Nam',
-        bankCode: 'VCB',
+        bankName: 'Ngân hàng TMCP Công Thương Việt Nam (VietinBank)',
+        bankCode: VIETINBANK_BIN,
         bankAccountNumber: '0123456789',
         bankAccountName: 'TRUONG TIEU HOC KIM DONG',
       });
     }
     logger.log(`School: ${school.code} (${school.id})`);
+
+    let school2: School;
+    const existingSchool2 = await schoolsService.findAll({
+      page: 1,
+      limit: 1,
+      search: 'LEVANTAM',
+      skip: 0,
+    });
+    if (existingSchool2.data.length > 0) {
+      school2 = existingSchool2.data[0];
+      if (school2.companyId !== company.id) {
+        school2 = await schoolsService.update(school2.id, {
+          companyId: company.id,
+        });
+      }
+    } else {
+      school2 = await schoolsService.create({
+        companyId: company.id,
+        code: 'LEVANTAM',
+        name: 'Trường Tiểu Học Lê Văn Tám',
+        address: '45 Đường Lê Văn Tám, Quận 1, TP.HCM',
+        bankName: 'Ngân hàng TMCP Công Thương Việt Nam (VietinBank)',
+        bankCode: VIETINBANK_BIN,
+        bankAccountNumber: '0129998888',
+        bankAccountName: 'TRUONG TIEU HOC LE VAN TAM',
+      });
+    }
+    logger.log(
+      `School: ${school2.code} (${school2.id}) — seeded only to demonstrate cross-school company scoping`,
+    );
 
     logger.log('Seeding super admin user...');
     let admin = await usersService.findByEmail('admin@kimdong.edu.vn');
@@ -70,24 +133,28 @@ async function run() {
         role: Role.SUPER_ADMIN,
       });
     }
-    let accountant = await usersService.findByEmail('ketoan@kimdong.edu.vn');
+
+    // The accountant/cashier belong to the COMPANY, not a single school —
+    // they can act on any school that company manages (KIMDONG and
+    // LEVANTAM here), per AccessControlService.
+    let accountant = await usersService.findByEmail('ketoan@eduacc.vn');
     if (!accountant) {
       accountant = await usersService.create({
-        email: 'ketoan@kimdong.edu.vn',
+        email: 'ketoan@eduacc.vn',
         password: 'KeToan@123456',
-        fullName: 'Kế toán trường',
+        fullName: 'Kế toán công ty (quản lý nhiều trường)',
         role: Role.ACCOUNTANT,
-        schoolId: school.id,
+        companyId: company.id,
       });
     }
-    let cashier = await usersService.findByEmail('thuquy@kimdong.edu.vn');
+    let cashier = await usersService.findByEmail('thuquy@eduacc.vn');
     if (!cashier) {
       cashier = await usersService.create({
-        email: 'thuquy@kimdong.edu.vn',
+        email: 'thuquy@eduacc.vn',
         password: 'ThuQuy@123456',
-        fullName: 'Thủ quỹ trường',
+        fullName: 'Thủ quỹ công ty (quản lý nhiều trường)',
         role: Role.CASHIER,
-        schoolId: school.id,
+        companyId: company.id,
       });
     }
 
@@ -224,9 +291,15 @@ async function run() {
 
     logger.log('Seed completed successfully.');
     logger.log('Login credentials:');
-    logger.log('  SUPER_ADMIN: admin@kimdong.edu.vn / Admin@123456');
-    logger.log('  ACCOUNTANT : ketoan@kimdong.edu.vn / KeToan@123456');
-    logger.log('  CASHIER    : thuquy@kimdong.edu.vn / ThuQuy@123456');
+    logger.log(
+      '  SUPER_ADMIN: admin@kimdong.edu.vn / Admin@123456  (unrestricted)',
+    );
+    logger.log(
+      '  ACCOUNTANT : ketoan@eduacc.vn / KeToan@123456     (company-wide: KIMDONG + LEVANTAM)',
+    );
+    logger.log(
+      '  CASHIER    : thuquy@eduacc.vn / ThuQuy@123456     (company-wide: KIMDONG + LEVANTAM)',
+    );
   } finally {
     await app.close();
   }

@@ -11,8 +11,12 @@ export enum ErrorCode {
   USER_INACTIVE = 'USER_INACTIVE',
   EMAIL_ALREADY_EXISTS = 'EMAIL_ALREADY_EXISTS',
 
+  COMPANY_NOT_FOUND = 'COMPANY_NOT_FOUND',
+  COMPANY_CODE_EXISTS = 'COMPANY_CODE_EXISTS',
+
   SCHOOL_NOT_FOUND = 'SCHOOL_NOT_FOUND',
   SCHOOL_CODE_EXISTS = 'SCHOOL_CODE_EXISTS',
+  SCHOOL_OUT_OF_SCOPE = 'SCHOOL_OUT_OF_SCOPE',
 
   ACADEMIC_YEAR_NOT_FOUND = 'ACADEMIC_YEAR_NOT_FOUND',
   SEMESTER_NOT_FOUND = 'SEMESTER_NOT_FOUND',
@@ -72,8 +76,12 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCode.USER_INACTIVE]: 'Tài khoản đã bị vô hiệu hóa',
   [ErrorCode.EMAIL_ALREADY_EXISTS]: 'Email đã tồn tại',
 
+  [ErrorCode.COMPANY_NOT_FOUND]: 'Không tìm thấy đơn vị quản lý',
+  [ErrorCode.COMPANY_CODE_EXISTS]: 'Mã đơn vị quản lý đã tồn tại',
+
   [ErrorCode.SCHOOL_NOT_FOUND]: 'Không tìm thấy trường học',
   [ErrorCode.SCHOOL_CODE_EXISTS]: 'Mã trường đã tồn tại',
+  [ErrorCode.SCHOOL_OUT_OF_SCOPE]: 'Bạn không có quyền truy cập trường học này',
 
   [ErrorCode.ACADEMIC_YEAR_NOT_FOUND]: 'Không tìm thấy năm học',
   [ErrorCode.SEMESTER_NOT_FOUND]: 'Không tìm thấy học kỳ',
