@@ -28,6 +28,14 @@ import { ReceivablesModule } from './receivables/receivables.module';
 import { DiscountsModule } from './discounts/discounts.module';
 import { AdjustmentsModule } from './adjustments/adjustments.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { PaymentProvidersModule } from './payment-providers/payment-providers.module';
+import { PaymentOrdersModule } from './payment-orders/payment-orders.module';
+import { PaymentAllocationsModule } from './payment-allocations/payment-allocations.module';
+import { PaymentTransactionsModule } from './payment-transactions/payment-transactions.module';
+import { ReconciliationModule } from './reconciliation/reconciliation.module';
+import { ReceiptsModule } from './receipts/receipts.module';
+import { RefundsModule } from './refunds/refunds.module';
+import { StudentCreditsModule } from './student-credits/student-credits.module';
 
 @Module({
   imports: [
@@ -71,6 +79,14 @@ import { LedgerModule } from './ledger/ledger.module';
     ReceivablesModule,
     DiscountsModule,
     AdjustmentsModule,
+    StudentCreditsModule,
+    PaymentProvidersModule,
+    PaymentOrdersModule,
+    ReceiptsModule,
+    PaymentAllocationsModule,
+    PaymentTransactionsModule,
+    ReconciliationModule,
+    RefundsModule,
   ],
   controllers: [AppController],
   providers: [

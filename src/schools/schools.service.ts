@@ -51,6 +51,14 @@ export class SchoolsService {
     return new PaginatedResult(data, total, query.page ?? 1, query.limit ?? 20);
   }
 
+  async findByBankAccountNumber(
+    bankAccountNumber: string,
+  ): Promise<School | null> {
+    return this.schoolRepository.findOne({
+      where: { bankAccountNumber, deletedAt: IsNull() },
+    });
+  }
+
   async findById(id: string): Promise<School> {
     const school = await this.schoolRepository.findOne({
       where: { id, deletedAt: IsNull() },

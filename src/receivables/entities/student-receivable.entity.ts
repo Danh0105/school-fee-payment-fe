@@ -40,6 +40,7 @@ export class StudentReceivable extends BaseEntity {
   @JoinColumn({ name: 'semester_id' })
   semester: Semester | null;
 
+  @Index()
   @Column({ type: 'uuid' })
   feePlanId: string;
 

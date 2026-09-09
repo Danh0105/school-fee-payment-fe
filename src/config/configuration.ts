@@ -26,6 +26,7 @@ export default () => ({
       process.env.PAYMENT_ORDER_EXPIRES_MINUTES ?? '60',
       10,
     ),
+    webhookSecret: process.env.PAYMENT_WEBHOOK_SECRET ?? '',
   },
 
   cors: {

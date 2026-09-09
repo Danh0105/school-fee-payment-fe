@@ -15,6 +15,7 @@ export class StudentClass extends BaseEntity {
   @JoinColumn({ name: 'student_id' })
   student: Student;
 
+  @Index()
   @Column({ type: 'uuid' })
   classId: string;
 
