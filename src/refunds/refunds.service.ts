@@ -81,9 +81,11 @@ export class RefundsService {
         );
       }
 
+      // Global sequence scope — see the comment on receivableCode generation
+      // in ReceivablesService for why this must not be scoped per school.
       const refundCode = await this.sequenceService.generateCode(
         'RF',
-        `REFUND:${transaction.schoolId}`,
+        'REFUND',
         8,
         manager,
       );

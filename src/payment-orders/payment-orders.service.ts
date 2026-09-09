@@ -82,9 +82,11 @@ export class PaymentOrdersService {
     const dateScope = `${now.getFullYear().toString().slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(
       now.getDate(),
     ).padStart(2, '0')}`;
+    // Global (not per-school) sequence scope — see the comment on
+    // receivableCode generation in ReceivablesService for why.
     const orderCode = await this.sequenceService.generateCode(
       `PAY${dateScope}`,
-      `PAYMENT_ORDER:${school.id}:${dateScope}`,
+      `PAYMENT_ORDER:${dateScope}`,
       6,
     );
 

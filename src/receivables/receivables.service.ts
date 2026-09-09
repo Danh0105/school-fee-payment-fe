@@ -52,9 +52,13 @@ export class ReceivablesService {
     if (existing) return null;
 
     const originalAmount = input.quantity.times(input.unitPrice);
+    // Sequence scope is intentionally global (not per-school): receivableCode
+    // has a system-wide unique constraint, and scoping the counter per school
+    // while keeping a global uniqueness constraint would let two schools both
+    // mint "RC00000001" and collide.
     const receivableCode = await this.sequenceService.generateCode(
       'RC',
-      `RECEIVABLE:${input.schoolId}`,
+      'RECEIVABLE',
       8,
       manager,
     );

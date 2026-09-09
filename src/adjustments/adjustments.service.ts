@@ -47,9 +47,11 @@ export class AdjustmentsService {
         manager,
       );
 
+      // Global sequence scope — see the comment on receivableCode generation
+      // in ReceivablesService for why this must not be scoped per school.
       const adjustmentCode = await this.sequenceService.generateCode(
         'ADJ',
-        `ADJUSTMENT:${receivable.schoolId}`,
+        'ADJUSTMENT',
         8,
         manager,
       );
