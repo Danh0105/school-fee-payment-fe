@@ -1,98 +1,216 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# School Fee Payment — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend quản lý thu tiền học sinh và thanh toán QR động, xây dựng theo mô hình kế toán thực tế:
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```
+Trường học → Năm học → Học kỳ → Lớp → Học sinh → Khoản thu →
+Công nợ → QR thanh toán → Giao dịch ngân hàng → Đối soát →
+Phân bổ thanh toán → Phiếu thu → Sổ công nợ → Báo cáo
 ```
 
-## Compile and run the project
+Mọi số tiền được lưu bằng `numeric(18,2)` trong PostgreSQL và xử lý bằng
+`decimal.js` ở tầng ứng dụng — không dùng số thực JavaScript cho tiền.
+Không có trường `isPaid` boolean nào cả: trạng thái thanh toán luôn được
+suy ra từ `amountDue`/`amountPaid`/`amountOutstanding`, được backend tự
+tính lại sau mỗi lần miễn giảm, điều chỉnh, hoặc phân bổ thanh toán.
+
+## Công nghệ
+
+NestJS · TypeScript · PostgreSQL · TypeORM · REST API · Swagger/OpenAPI ·
+JWT · class-validator/class-transformer · ConfigModule · exceljs
+
+## Kiến trúc chính
+
+- **AuthModule / UsersModule** — JWT access + refresh token (rotation,
+  hash lưu DB), role-based guard (`SUPER_ADMIN`, `ADMIN`, `ACCOUNTANT`,
+  `CASHIER`, `VIEWER`) áp dụng qua `@Roles()` + `RolesGuard` toàn cục.
+- **Schools → AcademicYears → Semesters → Classes → Students →
+  StudentClasses** — cấu trúc trường học phân theo năm học, học sinh đổi
+  lớp theo năm mà không ràng buộc cứng.
+- **FeeCategories → FeePlans → FeeAssignments → StudentReceivables** —
+  khoản thu được gán cho SCHOOL/GRADE/CLASS/STUDENT, backend tự sinh
+  công nợ (`POST /fee-plans/:id/assign`), idempotent theo
+  `(studentId, feePlanId)`.
+- **Discounts / Adjustments** — miễn giảm và điều chỉnh công nợ luôn đi
+  qua chứng từ riêng (`StudentDiscount`, `ReceivableAdjustment`), không
+  sửa trực tiếp `amountDue`. Mỗi thay đổi ghi một dòng sổ cái
+  (`StudentLedgerEntry`).
+- **PaymentProviders (adapter pattern)** — `VIETQR` (EMVCo/NAPAS QR +
+  webhook HMAC) và `MANUAL_BANK`, thêm provider mới (VNPay, MoMo, PayOS,
+  Sepay, Casso...) chỉ cần implement `PaymentProvider` interface, không
+  đụng vào business logic.
+- **PaymentOrders → PaymentTransactions → PaymentAllocations** — một
+  giao dịch ngân hàng có thể phân bổ cho nhiều khoản công nợ; một khoản
+  công nợ có thể được thanh toán bởi nhiều giao dịch. Webhook idempotent
+  bằng ràng buộc DB `(provider, externalTransactionId)`. Tiền thừa được
+  giữ lại làm `StudentCredit`, không bao giờ mất.
+- **Reconciliation** — tự động khớp theo `transferContent == orderCode`
+  (không bao giờ khớp theo tên học sinh); giao dịch không khớp được vào
+  `GET /reconciliation/unmatched` để kế toán khớp/hủy khớp thủ công, có
+  audit log và có thể đảo ngược (reversal), không hard-delete.
+- **Receipts / Refunds** — phiếu thu tự động phát hành sau mỗi lần phân
+  bổ thành công; hoàn tiền chỉ rút từ số dư có (credit) chưa phân bổ của
+  chính giao dịch đó.
+- **Ledger** — `StudentLedgerEntry` là sổ cái bất biến (không update/
+  delete), `GET /students/:id/ledger` trả về số dư lũy kế theo thời
+  gian, dùng để đối chiếu mọi số liệu báo cáo.
+- **Imports** — upload Excel → preview (validate, không ghi DB) → confirm
+  (ghi DB trong 1 transaction). Nhận diện tiêu đề cột tiếng Việt có/không
+  dấu.
+- **Reports / Dashboard / Exports** — mọi số liệu tính trực tiếp từ dữ
+  liệu tài chính (không lưu số liệu tĩnh), export ra file `.xlsx` thật.
+- **AuditLog** — ghi lại mọi thao tác tài chính quan trọng (tạo công nợ,
+  điều chỉnh, miễn giảm, thanh toán thủ công, khớp/hủy khớp giao dịch,
+  phát hành/hủy phiếu thu, hoàn tiền, đảo giao dịch).
+
+## Cài đặt
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
 ```
 
-## Run tests
+### Cơ sở dữ liệu
+
+Cần PostgreSQL đang chạy (không dùng SQLite). Có thể dùng Postgres cài sẵn
+trên máy hoặc Docker Compose đi kèm:
+
+```bash
+docker compose up -d db
+```
+
+Hoặc tạo database thủ công nếu đã có Postgres:
+
+```bash
+createdb school_fee
+```
+
+### Biến môi trường
+
+```bash
+cp .env.example .env
+```
+
+Sửa `.env` cho khớp với Postgres của bạn (`DB_HOST`, `DB_PORT`,
+`DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`), đặt `JWT_SECRET` /
+`JWT_REFRESH_SECRET` ngẫu nhiên, và cấu hình tài khoản ngân hàng mặc định
+(`BANK_CODE`, `BANK_ACCOUNT_NUMBER`, `BANK_ACCOUNT_NAME`) nếu muốn seed
+data tạo QR thật ngay.
+
+### Migration
+
+```bash
+npm run migration:run
+```
+
+### Seed dữ liệu mẫu
+
+Tạo trường Tiểu Học Kim Đồng, 3 tài khoản (SUPER_ADMIN/ACCOUNTANT/CASHIER),
+năm học 2026-2027, lớp 1A1/1A2/1A3, khoản thu "Kỹ năng sống" (80.000đ x 9
+tháng), và vài học sinh mẫu:
+
+```bash
+npm run seed
+```
+
+Tài khoản đăng nhập sau khi seed:
+
+| Vai trò       | Email                     | Mật khẩu       |
+| ------------- | -------------------------- | -------------- |
+| SUPER_ADMIN   | admin@kimdong.edu.vn       | Admin@123456   |
+| ACCOUNTANT    | ketoan@kimdong.edu.vn      | KeToan@123456  |
+| CASHIER       | thuquy@kimdong.edu.vn      | ThuQuy@123456  |
+
+### Chạy
+
+```bash
+npm run start:dev
+```
+
+Backend chạy tại `http://localhost:3010`. Swagger UI:
+`http://localhost:3010/api/docs`.
+
+## Test
 
 ```bash
 # unit tests
-$ npm run test
+npm run test
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+# e2e tests — cần một database Postgres riêng cho test (mặc định
+# school_fee_test, khai báo trong .env.test); tạo và migrate trước:
+createdb school_fee_test
+DB_DATABASE=school_fee_test npm run migration:run
+npm run test:e2e
 ```
 
-## Deployment
+`test/accounting.e2e-spec.ts` chạy toàn bộ app thật (không mock) và kiểm
+tra đúng 10 tình huống kế toán bắt buộc: thanh toán đủ, thanh toán một
+phần, thanh toán thừa (sinh credit), webhook trùng lặp (idempotent),
+webhook đồng thời (không double-pay), miễn giảm, điều chỉnh tăng, hoàn
+tiền, đảo giao dịch (reversal), và phân bổ một giao dịch cho nhiều khoản
+công nợ.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Migration scripts
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run migration:generate -- src/database/migrations/TenMigration
+npm run migration:run
+npm run migration:revert
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Cấu trúc thư mục
 
-## Resources
+```
+src/
+├── auth/ users/ schools/ academic-years/ semesters/ classes/
+├── students/ student-classes/
+├── fee-categories/ fee-plans/ fee-assignments/
+├── receivables/ discounts/ adjustments/ ledger/ student-credits/
+├── payment-providers/ payment-orders/ payment-transactions/
+├── payment-allocations/ reconciliation/ receipts/ refunds/
+├── imports/ exports/ reports/ dashboard/ audit-logs/
+├── common/ (decorators, guards, filters, interceptors, enums, utils)
+└── database/ (data-source, migrations, seeds, sequence service)
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+## Quy ước API
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Response thành công:
 
-## Support
+```json
+{ "success": true, "data": { } }
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Response lỗi:
 
-## Stay in touch
+```json
+{
+  "success": false,
+  "error": { "code": "RECEIVABLE_NOT_FOUND", "message": "Không tìm thấy khoản công nợ" },
+  "path": "/receivables/...",
+  "timestamp": "2026-09-09T02:00:00.000Z"
+}
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Danh sách phân trang:
 
-## License
+```json
+{ "data": [], "meta": { "page": 1, "limit": 20, "total": 0, "totalPages": 0 } }
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Query chuẩn cho mọi API danh sách: `page`, `limit`, `search`, `sortBy`,
+`sortOrder`, cộng thêm filter riêng của từng resource.
+
+## Nguyên tắc kế toán bắt buộc (đã áp dụng trong code)
+
+1. Không xóa cứng chứng từ tài chính — chỉ `CANCELLED`/`REVERSED`/`VOID`
+   kèm chứng từ đảo.
+2. Không sửa trực tiếp số tiền của công nợ đã phát hành — mọi thay đổi đi
+   qua `StudentDiscount`/`ReceivableAdjustment`.
+3. Một giao dịch ngân hàng chỉ ghi nhận một lần (idempotent theo
+   `provider + externalTransactionId`).
+4. Một giao dịch có thể phân bổ cho nhiều khoản công nợ, một khoản công
+   nợ có thể nhận nhiều giao dịch — quan hệ N:N qua `PaymentAllocation`.
+5. Thanh toán thiếu → `PARTIALLY_PAID`; thanh toán thừa → phần dư thành
+   `StudentCredit`, không mất và không tự ý gán cho khoản nợ khác.
+6. QR chỉ là phương tiện thanh toán, không phải bằng chứng kế toán — chỉ
+   `PaymentTransaction` đã ghi nhận/đối soát mới được dùng để gạch nợ.
