@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import Decimal from 'decimal.js';
 import { StudentReceivable } from './entities/student-receivable.entity';
 import { QueryReceivableDto } from './dto/query-receivable.dto';
@@ -41,14 +41,18 @@ export class ReceivablesService {
     return manager ? manager.getRepository(StudentReceivable) : this.repo;
   }
 
-  /** Creates one receivable and posts the corresponding RECEIVABLE debit ledger entry. Idempotent per (studentId, feePlanId). */
+  /** Creates one receivable and posts the corresponding RECEIVABLE debit ledger entry. Idempotent per (studentId, feePlanId, semesterId) — a MONTHLY plan calls this once per semester to split billing across HK1/HK2. */
   async createIfNotExists(
     input: CreateReceivableInput,
     manager: EntityManager,
   ): Promise<StudentReceivable | null> {
     const repo = this.repoFor(manager);
     const existing = await repo.findOne({
-      where: { studentId: input.studentId, feePlanId: input.feePlanId },
+      where: {
+        studentId: input.studentId,
+        feePlanId: input.feePlanId,
+        semesterId: input.semesterId ?? IsNull(),
+      },
     });
     if (existing) return null;
 

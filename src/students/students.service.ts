@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, IsNull, Repository } from 'typeorm';
+import { EntityManager, IsNull, QueryFailedError, Repository } from 'typeorm';
 import { Student } from './entities/student.entity';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
@@ -29,22 +29,54 @@ export class StudentsService {
     const repo = manager ? manager.getRepository(Student) : this.repo;
     const school = await this.schoolsService.findById(dto.schoolId);
 
-    let studentCode = dto.studentCode;
-    if (!studentCode) {
+    const requestedCode = dto.studentCode?.trim();
+    if (requestedCode) {
+      const existing = await repo.findOne({
+        where: {
+          schoolId: dto.schoolId,
+          studentCode: requestedCode,
+          deletedAt: IsNull(),
+        },
+      });
+      if (existing) throw AppException.conflict(ErrorCode.STUDENT_CODE_EXISTS);
+
+      try {
+        return await this.saveNewStudent(repo, dto, requestedCode);
+      } catch (error) {
+        if (this.isUniqueViolation(error)) {
+          throw AppException.conflict(ErrorCode.STUDENT_CODE_EXISTS);
+        }
+        throw error;
+      }
+    }
+
+    for (;;) {
       const seq = await this.sequenceService.next(
         `STUDENT:${school.code}`,
         manager,
       );
-      studentCode = `${school.code}${String(seq).padStart(9, '0')}`;
-    } else {
+      const studentCode = `${school.code}${String(seq).padStart(9, '0')}`;
       const existing = await repo.findOne({
-        where: { schoolId: dto.schoolId, studentCode, deletedAt: IsNull() },
+        where: { schoolId: dto.schoolId, studentCode },
       });
-      if (existing) throw AppException.conflict(ErrorCode.STUDENT_CODE_EXISTS);
-    }
+      if (existing) continue;
 
-    const student = repo.create({ ...dto, studentCode });
-    return repo.save(student);
+      return this.saveNewStudent(repo, dto, studentCode);
+    }
+  }
+
+  private saveNewStudent(
+    repo: Repository<Student>,
+    dto: CreateStudentDto,
+    studentCode: string,
+  ): Promise<Student> {
+    return repo.save(repo.create({ ...dto, studentCode }));
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) return false;
+    const driverError = error.driverError as { code?: string };
+    return driverError.code === '23505';
   }
 
   async findByStudentCode(
@@ -107,6 +139,27 @@ export class StudentsService {
     });
     if (!student) throw AppException.notFound(ErrorCode.STUDENT_NOT_FOUND);
     return student;
+  }
+
+  /**
+   * Looks up students by their identifierCode (CCCD/mã định danh) *within a
+   * given school*, for the parent-portal access flow — a parent picks their
+   * child's school, then enters the identifierCode, to reach that student's
+   * payment page (no account/password involved). Scoping by schoolId keeps
+   * this correct even though identifierCode has no DB-level unique
+   * constraint (only deduped within a single Excel import): two different
+   * schools could otherwise coincidentally share a code. Still returns
+   * every match — the caller must treat more than one match within the same
+   * school as ambiguous rather than guessing.
+   */
+  async findByIdentifierCode(
+    identifierCode: string,
+    schoolId: string,
+  ): Promise<Student[]> {
+    return this.repo.find({
+      where: { identifierCode, schoolId, deletedAt: IsNull() },
+      relations: { school: true },
+    });
   }
 
   async update(id: string, dto: UpdateStudentDto): Promise<Student> {

@@ -1,13 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsDateString,
   IsEnum,
   IsNumberString,
   IsOptional,
   IsString,
   IsUUID,
 } from 'class-validator';
-import { BillingType, FeePlanStatus } from '../../common/enums/status.enum';
+import { FeePlanStatus } from '../../common/enums/status.enum';
 
 export class CreateFeePlanDto {
   @ApiProperty()
@@ -16,33 +15,7 @@ export class CreateFeePlanDto {
 
   @ApiProperty()
   @IsUUID()
-  academicYearId: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUUID()
-  semesterId?: string;
-
-  @ApiProperty()
-  @IsUUID()
   feeCategoryId: string;
-
-  @ApiProperty({ example: 'KNS-2627' })
-  @IsString()
-  code: string;
-
-  @ApiProperty({ example: 'Học phí môn Kỹ năng sống năm học 2026-2027' })
-  @IsString()
-  name: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiProperty({ enum: BillingType })
-  @IsEnum(BillingType)
-  billingType: BillingType;
 
   @ApiProperty({
     example: '80000',
@@ -51,19 +24,18 @@ export class CreateFeePlanDto {
   @IsNumberString()
   unitPrice: string;
 
-  @ApiProperty({ example: '9', description: 'Number of months/units' })
+  @ApiProperty({
+    example: '9',
+    description:
+      'Number of months for the whole school year (e.g. 9). Use 1 for a one-time, non-recurring fee. A value above 1 bills across HK1/HK2 (half each) instead of the full year at once.',
+  })
   @IsNumberString()
   quantity: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
-  startDate?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsDateString()
-  dueDate?: string;
+  @IsString()
+  description?: string;
 
   @ApiPropertyOptional({ enum: FeePlanStatus })
   @IsOptional()

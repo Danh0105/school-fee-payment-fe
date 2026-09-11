@@ -31,6 +31,12 @@ export class School extends BaseEntity {
   taxCode: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
+  managerInfo: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  salesRepresentative: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
   bankName: string | null;
 
   @Column({ type: 'varchar', length: 30, nullable: true })

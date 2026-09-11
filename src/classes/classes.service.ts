@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { Class } from './entities/class.entity';
 import { CreateClassDto } from './dto/create-class.dto';
 import { UpdateClassDto } from './dto/update-class.dto';
@@ -9,24 +9,76 @@ import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
 import { applySchoolScope } from '../common/utils/school-scope.util';
+import { AcademicYearsService } from '../academic-years/academic-years.service';
+import { SequenceService } from '../database/sequence.service';
+
+const CLASS_CODE_PREFIX = 'CLS';
+const CLASS_CODE_PADDING = 6;
 
 @Injectable()
 export class ClassesService {
   constructor(
     @InjectRepository(Class)
     private readonly repo: Repository<Class>,
+    private readonly academicYearsService: AcademicYearsService,
+    private readonly sequenceService: SequenceService,
   ) {}
 
   async create(dto: CreateClassDto): Promise<Class> {
-    const existing = await this.repo.findOne({
-      where: {
-        schoolId: dto.schoolId,
-        academicYearId: dto.academicYearId,
-        code: dto.code,
-      },
-    });
-    if (existing) throw AppException.conflict(ErrorCode.CLASS_CODE_EXISTS);
-    return this.repo.save(this.repo.create(dto));
+    const academicYear = dto.academicYearId
+      ? await this.academicYearsService.findById(dto.academicYearId)
+      : await this.academicYearsService.getCurrent(dto.schoolId);
+    if (academicYear.schoolId !== dto.schoolId) {
+      throw AppException.badRequest(ErrorCode.VALIDATION_ERROR);
+    }
+
+    const requestedCode = dto.code?.trim();
+    if (requestedCode) {
+      const existing = await this.repo.findOne({
+        where: {
+          schoolId: dto.schoolId,
+          academicYearId: academicYear.id,
+          code: requestedCode,
+        },
+      });
+      if (existing) throw AppException.conflict(ErrorCode.CLASS_CODE_EXISTS);
+
+      try {
+        return await this.saveNewClass(dto, academicYear.id, requestedCode);
+      } catch (error) {
+        if (this.isUniqueViolation(error)) {
+          throw AppException.conflict(ErrorCode.CLASS_CODE_EXISTS);
+        }
+        throw error;
+      }
+    }
+
+    for (;;) {
+      const code = await this.sequenceService.generateCode(
+        CLASS_CODE_PREFIX,
+        `CLASS:${dto.schoolId}:${academicYear.id}`,
+        CLASS_CODE_PADDING,
+      );
+      try {
+        return await this.saveNewClass(dto, academicYear.id, code);
+      } catch (error) {
+        if (!this.isUniqueViolation(error)) throw error;
+      }
+    }
+  }
+
+  private saveNewClass(
+    dto: CreateClassDto,
+    academicYearId: string,
+    code: string,
+  ): Promise<Class> {
+    return this.repo.save(this.repo.create({ ...dto, academicYearId, code }));
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) return false;
+    const driverError = error.driverError as { code?: string };
+    return driverError.code === '23505';
   }
 
   async findAll(

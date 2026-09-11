@@ -18,7 +18,6 @@ import { FeePlan } from '../../fee-plans/entities/fee-plan.entity';
 import { Role } from '../../common/enums/role.enum';
 import {
   AcademicYearStatus,
-  BillingType,
   FeePlanStatus,
 } from '../../common/enums/status.enum';
 
@@ -237,11 +236,7 @@ async function run() {
     if (!feePlan) {
       feePlan = await feePlansService.create({
         schoolId: school.id,
-        academicYearId: academicYear.id,
         feeCategoryId: feeCategory.id,
-        code: 'KNS-2627',
-        name: 'Học phí môn Kỹ năng sống năm học 2026-2027',
-        billingType: BillingType.MONTHLY,
         unitPrice: '80000',
         quantity: '9',
         status: FeePlanStatus.ACTIVE,

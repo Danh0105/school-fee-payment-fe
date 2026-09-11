@@ -1,4 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ApiHideProperty,
+  ApiProperty,
+  ApiPropertyOptional,
+} from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ClassStatus } from '../../common/enums/status.enum';
 
@@ -7,13 +11,15 @@ export class CreateClassDto {
   @IsUUID()
   schoolId: string;
 
-  @ApiProperty()
+  @ApiHideProperty()
+  @IsOptional()
   @IsUUID()
-  academicYearId: string;
+  academicYearId?: string;
 
-  @ApiProperty({ example: '1A1' })
+  @ApiHideProperty()
+  @IsOptional()
   @IsString()
-  code: string;
+  code?: string;
 
   @ApiProperty({ example: '1A1' })
   @IsString()

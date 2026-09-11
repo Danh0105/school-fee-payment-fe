@@ -1,4 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ApiHideProperty,
+  ApiProperty,
+  ApiPropertyOptional,
+} from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { EntityStatus } from '../../common/enums/status.enum';
 
@@ -11,50 +15,74 @@ export class CreateSchoolDto {
   @IsUUID()
   companyId?: string;
 
-  @ApiProperty()
+  @ApiHideProperty()
+  @IsOptional()
   @IsString()
-  code: string;
+  code?: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Tên trường', example: 'ICHI SKILL' })
   @IsString()
   name: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Địa chỉ trường',
+    example: '231/1 Nguyễn Phúc Chu, Tân Sơn, Hồ Chí Minh 700000, Vietnam',
+  })
   @IsOptional()
   @IsString()
   address?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Điện thoại', example: '0900000008' })
   @IsOptional()
   @IsString()
   phone?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Mã số thuế', example: '0316660845' })
   @IsOptional()
   @IsString()
   taxCode?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Thông tin người quản lý',
+    example: 'Nguyen Van A',
+  })
+  @IsOptional()
+  @IsString()
+  managerInfo?: string;
+
+  @ApiPropertyOptional({
+    description: 'Kinh doanh phụ trách',
+    example: 'Nguyễn Văn B',
+  })
+  @IsOptional()
+  @IsString()
+  salesRepresentative?: string;
+
+  @ApiHideProperty()
   @IsOptional()
   @IsString()
   bankName?: string;
 
-  @ApiPropertyOptional()
+  @ApiHideProperty()
   @IsOptional()
   @IsString()
   bankCode?: string;
 
-  @ApiPropertyOptional()
+  @ApiHideProperty()
   @IsOptional()
   @IsString()
   bankAccountNumber?: string;
 
-  @ApiPropertyOptional()
+  @ApiHideProperty()
   @IsOptional()
   @IsString()
   bankAccountName?: string;
 
-  @ApiPropertyOptional({ enum: EntityStatus })
+  @ApiPropertyOptional({
+    description: 'Trạng thái trường',
+    enum: EntityStatus,
+    default: EntityStatus.ACTIVE,
+  })
   @IsOptional()
   @IsEnum(EntityStatus)
   status?: EntityStatus;

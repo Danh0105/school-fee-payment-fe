@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, QueryFailedError, Repository } from 'typeorm';
 import { School } from './entities/school.entity';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { UpdateSchoolDto } from './dto/update-school.dto';
@@ -9,23 +9,72 @@ import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
 import { applySchoolScope } from '../common/utils/school-scope.util';
+import { SequenceService } from '../database/sequence.service';
+import { EntityStatus } from '../common/enums/status.enum';
+
+const SCHOOL_CODE_PREFIX = 'SCH';
+const SCHOOL_CODE_SCOPE = 'SCHOOL';
+const SCHOOL_CODE_PADDING = 6;
 
 @Injectable()
 export class SchoolsService {
   constructor(
     @InjectRepository(School)
     private readonly schoolRepository: Repository<School>,
+    private readonly sequenceService: SequenceService,
   ) {}
 
   async create(dto: CreateSchoolDto): Promise<School> {
-    const existing = await this.schoolRepository.findOne({
-      where: { code: dto.code, deletedAt: IsNull() },
-    });
-    if (existing) {
-      throw AppException.conflict(ErrorCode.SCHOOL_CODE_EXISTS);
+    const requestedCode = dto.code?.trim();
+
+    if (requestedCode) {
+      const existing = await this.schoolRepository.findOne({
+        where: { code: requestedCode, deletedAt: IsNull() },
+      });
+      if (existing) {
+        throw AppException.conflict(ErrorCode.SCHOOL_CODE_EXISTS);
+      }
+
+      try {
+        return await this.saveNewSchool(dto, requestedCode);
+      } catch (error) {
+        if (this.isUniqueViolation(error)) {
+          throw AppException.conflict(ErrorCode.SCHOOL_CODE_EXISTS);
+        }
+        throw error;
+      }
     }
-    const school = this.schoolRepository.create(dto);
+
+    // SequenceService allocates values atomically. Retrying unique violations
+    // also handles a generated code colliding with a legacy client-supplied code.
+    for (;;) {
+      const generatedCode = await this.sequenceService.generateCode(
+        SCHOOL_CODE_PREFIX,
+        SCHOOL_CODE_SCOPE,
+        SCHOOL_CODE_PADDING,
+      );
+      try {
+        return await this.saveNewSchool(dto, generatedCode);
+      } catch (error) {
+        if (!this.isUniqueViolation(error)) throw error;
+      }
+    }
+  }
+
+  private saveNewSchool(dto: CreateSchoolDto, code: string): Promise<School> {
+    const school = this.schoolRepository.create({
+      ...dto,
+      code,
+      managerInfo: dto.managerInfo ?? null,
+      salesRepresentative: dto.salesRepresentative ?? null,
+    });
     return this.schoolRepository.save(school);
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) return false;
+    const driverError = error.driverError as { code?: string };
+    return driverError.code === '23505';
   }
 
   async findAll(
@@ -61,6 +110,21 @@ export class SchoolsService {
       .take(query.limit)
       .getManyAndCount();
     return new PaginatedResult(data, total, query.page ?? 1, query.limit ?? 20);
+  }
+
+  /**
+   * Minimal, unauthenticated-safe school list (id/name/code only, no bank
+   * or manager info) for pickers on public screens — e.g. the parent-portal
+   * "chọn trường" step before entering a student's identifierCode.
+   */
+  async findAllPublicSummary(): Promise<
+    Pick<School, 'id' | 'name' | 'code'>[]
+  > {
+    return this.schoolRepository.find({
+      where: { status: EntityStatus.ACTIVE, deletedAt: IsNull() },
+      select: { id: true, name: true, code: true },
+      order: { name: 'ASC' },
+    });
   }
 
   async findIdsByCompany(companyId: string): Promise<string[]> {

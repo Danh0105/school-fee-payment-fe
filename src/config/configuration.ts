@@ -17,6 +17,15 @@ export default () => ({
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d',
   },
 
+  // Separate signing secret for parent-portal tokens (parent enters a
+  // student's identifierCode to reach that student's payment page), kept
+  // independent from the staff `jwt.secret` so a parent token can never be
+  // reused against staff-only endpoints even if a guard were misconfigured.
+  parentJwt: {
+    secret: process.env.PARENT_JWT_SECRET ?? 'change-me-parent',
+    expiresIn: process.env.PARENT_JWT_EXPIRES_IN ?? '30d',
+  },
+
   payment: {
     defaultProvider: process.env.PAYMENT_PROVIDER ?? 'VIETQR',
     bankCode: process.env.BANK_CODE ?? '',

@@ -1,4 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ApiHideProperty,
+  ApiProperty,
+  ApiPropertyOptional,
+} from '@nestjs/swagger';
 import {
   IsDateString,
   IsEmail,
@@ -15,7 +19,7 @@ export class CreateStudentDto {
   @IsUUID()
   schoolId: string;
 
-  @ApiPropertyOptional({ description: 'Auto-generated if omitted' })
+  @ApiHideProperty()
   @IsOptional()
   @IsString()
   studentCode?: string;

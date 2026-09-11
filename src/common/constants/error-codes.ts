@@ -65,6 +65,8 @@ export enum ErrorCode {
   ZALO_NOT_CONFIGURED = 'ZALO_NOT_CONFIGURED',
   ZALO_SEND_FAILED = 'ZALO_SEND_FAILED',
   PARENT_PHONE_MISSING = 'PARENT_PHONE_MISSING',
+
+  STUDENT_IDENTIFIER_NOT_FOUND = 'STUDENT_IDENTIFIER_NOT_FOUND',
 }
 
 export const ErrorMessages: Record<ErrorCode, string> = {
@@ -137,4 +139,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCode.ZALO_NOT_CONFIGURED]: 'Chưa cấu hình kết nối Zalo OA',
   [ErrorCode.ZALO_SEND_FAILED]: 'Gửi thông báo qua Zalo thất bại',
   [ErrorCode.PARENT_PHONE_MISSING]: 'Học sinh chưa có số điện thoại phụ huynh',
+
+  [ErrorCode.STUDENT_IDENTIFIER_NOT_FOUND]:
+    'Không tìm thấy học sinh với mã định danh này',
 };

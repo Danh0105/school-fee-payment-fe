@@ -43,6 +43,7 @@ import { ReportsModule } from './reports/reports.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ExportsModule } from './exports/exports.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ParentPortalModule } from './parent-portal/parent-portal.module';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     DashboardModule,
     ExportsModule,
     NotificationsModule,
+    ParentPortalModule,
   ],
   controllers: [AppController],
   providers: [

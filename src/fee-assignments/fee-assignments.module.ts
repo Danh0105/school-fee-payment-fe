@@ -6,6 +6,7 @@ import { FeeAssignmentsController } from './fee-assignments.controller';
 import { FeePlansModule } from '../fee-plans/fee-plans.module';
 import { StudentClassesModule } from '../student-classes/student-classes.module';
 import { ReceivablesModule } from '../receivables/receivables.module';
+import { SemestersModule } from '../semesters/semesters.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { ReceivablesModule } from '../receivables/receivables.module';
     FeePlansModule,
     StudentClassesModule,
     ReceivablesModule,
+    SemestersModule,
   ],
   providers: [FeeAssignmentsService],
   controllers: [FeeAssignmentsController],

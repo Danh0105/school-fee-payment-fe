@@ -9,8 +9,10 @@ import { AcademicYear } from '../../academic-years/entities/academic-year.entity
 import { Semester } from '../../semesters/entities/semester.entity';
 import { FeePlan } from '../../fee-plans/entities/fee-plan.entity';
 
+// Unique on (studentId, feePlanId, semesterId) — with NULL semesterId
+// coalesced to a fixed sentinel so ONE_TIME plans still get exactly one
+// receivable per student. See migration SplitReceivablesBySemester.
 @Entity('student_receivables')
-@Index(['studentId', 'feePlanId'], { unique: true })
 export class StudentReceivable extends BaseEntity {
   @Column({ type: 'uuid' })
   schoolId: string;

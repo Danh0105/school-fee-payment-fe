@@ -28,7 +28,6 @@ import { Role } from '../src/common/enums/role.enum';
 import {
   AcademicYearStatus,
   AdjustmentType,
-  BillingType,
   DiscountType,
   FeeAssignmentTargetType,
   FeePlanStatus,
@@ -63,7 +62,6 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
   let feeCategory: FeeCategory;
   let userId: string;
   let studentSeq = 0;
-  let feePlanSeq = 0;
 
   const runId = Date.now().toString(36);
 
@@ -157,16 +155,11 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
   async function createReceivable(
     amount = '720000',
   ): Promise<{ student: Student; receivable: StudentReceivable }> {
-    feePlanSeq += 1;
     const student = await createStudent();
     const feePlan = await feePlansService.create(
       {
         schoolId: school.id,
-        academicYearId: academicYear.id,
         feeCategoryId: feeCategory.id,
-        code: `FP${runId}-${feePlanSeq}`,
-        name: `Khoản thu test ${feePlanSeq}`,
-        billingType: BillingType.ONE_TIME,
         unitPrice: amount,
         quantity: '1',
         status: FeePlanStatus.ACTIVE,
@@ -396,11 +389,7 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
     const secondFeePlan = await feePlansService.create(
       {
         schoolId: school.id,
-        academicYearId: academicYear.id,
         feeCategoryId: feeCategory.id,
-        code: `FP${runId}-multi`,
-        name: 'Tiền ăn test',
-        billingType: BillingType.ONE_TIME,
         unitPrice: '500000',
         quantity: '1',
         status: FeePlanStatus.ACTIVE,
