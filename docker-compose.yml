@@ -6,8 +6,12 @@ services:
       POSTGRES_USER: ${DB_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_DATABASE:-school_fee}
+    # Bound to localhost only — the api service reaches this over the
+    # internal Docker network (host "db"), so Postgres should never be
+    # reachable from outside the VPS itself. Use an SSH tunnel to inspect
+    # it remotely instead of opening this port publicly.
     ports:
-      - '${DB_PORT:-5432}:5432'
+      - '127.0.0.1:${DB_PORT:-5432}:5432'
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -34,13 +38,25 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+      PARENT_JWT_SECRET: ${PARENT_JWT_SECRET:-change-me-parent}
+      PARENT_JWT_EXPIRES_IN: ${PARENT_JWT_EXPIRES_IN:-30d}
       PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-VIETQR}
       BANK_CODE: ${BANK_CODE:-}
       BANK_ACCOUNT_NUMBER: ${BANK_ACCOUNT_NUMBER:-}
       BANK_ACCOUNT_NAME: ${BANK_ACCOUNT_NAME:-}
+      PAYMENT_ORDER_EXPIRES_MINUTES: ${PAYMENT_ORDER_EXPIRES_MINUTES:-60}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      ZALO_OA_ID: ${ZALO_OA_ID:-}
+      ZALO_APP_ID: ${ZALO_APP_ID:-}
+      ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
+      ZALO_ZNS_TEMPLATE_ID: ${ZALO_ZNS_TEMPLATE_ID:-}
+      ZALO_INITIAL_REFRESH_TOKEN: ${ZALO_INITIAL_REFRESH_TOKEN:-}
+    # Bound to localhost only — a reverse proxy (nginx/Caddy) on the VPS
+    # terminates TLS and forwards to this port. Do not expose 3010
+    # publicly; the public-facing port must be 443 on the proxy.
     ports:
-      - '3010:3010'
+      - '127.0.0.1:3010:3010'
 
 volumes:
   db_data:

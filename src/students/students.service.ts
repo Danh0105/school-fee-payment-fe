@@ -29,6 +29,16 @@ export class StudentsService {
     const repo = manager ? manager.getRepository(Student) : this.repo;
     const school = await this.schoolsService.findById(dto.schoolId);
 
+    const identifierCode = dto.identifierCode?.trim() || undefined;
+    if (identifierCode) {
+      await this.assertIdentifierCodeAvailable(
+        repo,
+        dto.schoolId,
+        identifierCode,
+      );
+    }
+    const createDto = { ...dto, identifierCode };
+
     const requestedCode = dto.studentCode?.trim();
     if (requestedCode) {
       const existing = await repo.findOne({
@@ -41,12 +51,9 @@ export class StudentsService {
       if (existing) throw AppException.conflict(ErrorCode.STUDENT_CODE_EXISTS);
 
       try {
-        return await this.saveNewStudent(repo, dto, requestedCode);
+        return await this.saveNewStudent(repo, createDto, requestedCode);
       } catch (error) {
-        if (this.isUniqueViolation(error)) {
-          throw AppException.conflict(ErrorCode.STUDENT_CODE_EXISTS);
-        }
-        throw error;
+        throw this.mapUniqueViolation(error);
       }
     }
 
@@ -61,7 +68,25 @@ export class StudentsService {
       });
       if (existing) continue;
 
-      return this.saveNewStudent(repo, dto, studentCode);
+      try {
+        return await this.saveNewStudent(repo, createDto, studentCode);
+      } catch (error) {
+        throw this.mapUniqueViolation(error);
+      }
+    }
+  }
+
+  private async assertIdentifierCodeAvailable(
+    repo: Repository<Student>,
+    schoolId: string,
+    identifierCode: string,
+    excludeStudentId?: string,
+  ): Promise<void> {
+    const existing = await repo.findOne({
+      where: { schoolId, identifierCode, deletedAt: IsNull() },
+    });
+    if (existing && existing.id !== excludeStudentId) {
+      throw AppException.conflict(ErrorCode.STUDENT_IDENTIFIER_CODE_EXISTS);
     }
   }
 
@@ -77,6 +102,18 @@ export class StudentsService {
     if (!(error instanceof QueryFailedError)) return false;
     const driverError = error.driverError as { code?: string };
     return driverError.code === '23505';
+  }
+
+  /** Translates a raw DB unique-violation into the matching AppException — a fallback for the race the pre-check can't fully close. */
+  private mapUniqueViolation(error: unknown): unknown {
+    if (!this.isUniqueViolation(error)) return error;
+    const driverError = (error as QueryFailedError).driverError as {
+      constraint?: string;
+    };
+    if (driverError.constraint === 'IDX_students_school_id_identifier_code') {
+      return AppException.conflict(ErrorCode.STUDENT_IDENTIFIER_CODE_EXISTS);
+    }
+    return AppException.conflict(ErrorCode.STUDENT_CODE_EXISTS);
   }
 
   async findByStudentCode(
@@ -145,12 +182,11 @@ export class StudentsService {
    * Looks up students by their identifierCode (CCCD/mã định danh) *within a
    * given school*, for the parent-portal access flow — a parent picks their
    * child's school, then enters the identifierCode, to reach that student's
-   * payment page (no account/password involved). Scoping by schoolId keeps
-   * this correct even though identifierCode has no DB-level unique
-   * constraint (only deduped within a single Excel import): two different
-   * schools could otherwise coincidentally share a code. Still returns
-   * every match — the caller must treat more than one match within the same
-   * school as ambiguous rather than guessing.
+   * payment page (no account/password involved). identifierCode is unique
+   * per school at the DB level (see migration UniqueStudentIdentifierCode),
+   * so this should only ever return 0 or 1 rows for well-formed data — it
+   * still returns an array so the caller can defend against pre-existing
+   * duplicate data created before that constraint was added.
    */
   async findByIdentifierCode(
     identifierCode: string,
@@ -164,8 +200,21 @@ export class StudentsService {
 
   async update(id: string, dto: UpdateStudentDto): Promise<Student> {
     const student = await this.findById(id);
-    Object.assign(student, dto);
-    return this.repo.save(student);
+    const identifierCode = dto.identifierCode?.trim() || undefined;
+    if (identifierCode && identifierCode !== student.identifierCode) {
+      await this.assertIdentifierCodeAvailable(
+        this.repo,
+        student.schoolId,
+        identifierCode,
+        student.id,
+      );
+    }
+    Object.assign(student, dto, identifierCode ? { identifierCode } : {});
+    try {
+      return await this.repo.save(student);
+    } catch (error) {
+      throw this.mapUniqueViolation(error);
+    }
   }
 
   async softDelete(id: string): Promise<void> {

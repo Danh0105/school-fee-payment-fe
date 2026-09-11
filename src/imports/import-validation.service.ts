@@ -68,6 +68,26 @@ export class ImportValidationService {
       existingStudents.map((s) => [s.studentCode, s]),
     );
 
+    // identifierCode is now unique per school at the DB level (see migration
+    // UniqueStudentIdentifierCode) — pre-check against existing rows so a
+    // collision surfaces as a friendly per-row error here instead of
+    // aborting the whole confirm() transaction with a raw constraint
+    // violation partway through.
+    const identifierCodes = [
+      ...new Set(rows.map((r) => r.values.identifierCode).filter(Boolean)),
+    ];
+    const existingStudentsByIdentifierCode = identifierCodes.length
+      ? await this.studentRepository.find({
+          where: {
+            schoolId: params.schoolId,
+            identifierCode: In(identifierCodes),
+          },
+        })
+      : [];
+    const studentByIdentifierCode = new Map(
+      existingStudentsByIdentifierCode.map((s) => [s.identifierCode, s]),
+    );
+
     const existingReceivablesByStudentId = new Set<string>();
     if (params.feePlanId && existingStudents.length) {
       const receivables = await this.receivableRepository.find({
@@ -158,6 +178,19 @@ export class ImportValidationService {
           rowHasError = true;
         }
         seenIdentifierCodes.add(identifierCode);
+
+        const studentCodeForRow = v.studentCode?.trim() || null;
+        const conflicting = studentByIdentifierCode.get(identifierCode);
+        if (conflicting && conflicting.studentCode !== studentCodeForRow) {
+          addError(
+            row,
+            'MÃ ĐỊNH DANH',
+            'identifierCode',
+            identifierCode,
+            `Mã định danh đã được dùng cho học sinh khác (${conflicting.studentCode})`,
+          );
+          rowHasError = true;
+        }
       }
 
       if (

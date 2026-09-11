@@ -26,6 +26,7 @@ export enum ErrorCode {
 
   STUDENT_NOT_FOUND = 'STUDENT_NOT_FOUND',
   STUDENT_CODE_EXISTS = 'STUDENT_CODE_EXISTS',
+  STUDENT_IDENTIFIER_CODE_EXISTS = 'STUDENT_IDENTIFIER_CODE_EXISTS',
 
   FEE_CATEGORY_NOT_FOUND = 'FEE_CATEGORY_NOT_FOUND',
   FEE_PLAN_NOT_FOUND = 'FEE_PLAN_NOT_FOUND',
@@ -97,6 +98,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
 
   [ErrorCode.STUDENT_NOT_FOUND]: 'Không tìm thấy học sinh',
   [ErrorCode.STUDENT_CODE_EXISTS]: 'Mã học sinh đã tồn tại',
+  [ErrorCode.STUDENT_IDENTIFIER_CODE_EXISTS]:
+    'Mã định danh (CCCD) này đã được dùng cho học sinh khác trong trường',
 
   [ErrorCode.FEE_CATEGORY_NOT_FOUND]: 'Không tìm thấy danh mục khoản thu',
   [ErrorCode.FEE_PLAN_NOT_FOUND]: 'Không tìm thấy khoản thu',
