@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { ViettinbankController } from './viettinbank.controller';
 import { CryptoKeyService } from './crypto-key.service';
 import { InqBillRequestDto } from './dto/inq-bill.dto';
@@ -31,6 +32,7 @@ describe('ViettinbankController', () => {
     verify?: jest.Mock;
     findByTransferContent?: jest.Mock;
     ingest?: jest.Mock;
+    vac?: string;
   }) {
     const crypto = {
       verify: overrides?.verify ?? jest.fn().mockReturnValue(true),
@@ -43,10 +45,15 @@ describe('ViettinbankController', () => {
     const paymentTransactionsService = {
       ingest: overrides?.ingest ?? jest.fn(),
     } as unknown as PaymentTransactionsService;
+    const config = {
+      get: (key: string) =>
+        key === 'viettinbank.account' ? (overrides?.vac ?? '1ICS') : undefined,
+    } as unknown as ConfigService;
     return new ViettinbankController(
       crypto,
       paymentOrdersService,
       paymentTransactionsService,
+      config,
     );
   }
 
@@ -84,6 +91,22 @@ describe('ViettinbankController', () => {
 
       expect(findByTransferContent).toHaveBeenCalledWith(baseData.custCode);
       expect(res.data.errors.errorCode).toBe('02');
+    });
+
+    it('tách mã VAC (1ICS) khỏi custCode trước khi tra transferContent (custCode = VAC + VAV)', async () => {
+      const findByTransferContent = jest.fn().mockResolvedValue({
+        orderCode: 'ORD-1',
+        status: PaymentOrderStatus.PENDING,
+        requestedAmount: { toFixed: () => '648000' },
+        expiresAt: null,
+      });
+      const controller = makeController({ findByTransferContent, vac: '1ICS' });
+      const dataWithVac = { ...baseData, custCode: '1ICS8CAP250730152800001' };
+      const dto = { header: baseHeader, data: dataWithVac } as InqBillRequestDto;
+
+      await controller.inqBill(dto);
+
+      expect(findByTransferContent).toHaveBeenCalledWith('8CAP250730152800001');
     });
 
     it('trả về mã 02 khi hóa đơn đã thanh toán/không ở trạng thái chờ', async () => {

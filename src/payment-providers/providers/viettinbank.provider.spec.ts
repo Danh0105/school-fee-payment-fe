@@ -27,8 +27,10 @@ describe('ViettinbankProvider', () => {
     signature: 'sig',
   };
 
-  function makeProvider(verify: jest.Mock) {
-    const config = { get: () => undefined } as unknown as ConfigService;
+  function makeProvider(verify: jest.Mock, vac?: string) {
+    const config = {
+      get: (key: string) => (key === 'viettinbank.account' ? vac : undefined),
+    } as unknown as ConfigService;
     const cryptoKeys = { verify } as unknown as CryptoKeyService;
     const api = {} as unknown as ViettinbankApiService;
     return new ViettinbankProvider(config, cryptoKeys, api);
@@ -100,6 +102,28 @@ describe('ViettinbankProvider', () => {
       expect(parsed.transactionTime.getHours()).toBe(14);
       expect(parsed.transactionTime.getMinutes()).toBe(6);
       expect(parsed.transactionTime.getSeconds()).toBe(34);
+    });
+
+    it('tách mã VAC (1ICS) khỏi custCode khi map transferContent (custCode = VAC + VAV)', () => {
+      const provider = makeProvider(jest.fn(), '1ICS');
+
+      const parsed = provider.parseTransaction({
+        ...notifyPayload,
+        custCode: '1ICS2NDVNDV24012358711',
+      });
+
+      expect(parsed.transferContent).toBe('2NDVNDV24012358711');
+    });
+
+    it('giữ nguyên custCode nếu không khớp tiền tố VAC đã cấu hình', () => {
+      const provider = makeProvider(jest.fn(), '1ICS');
+
+      const parsed = provider.parseTransaction({
+        ...notifyPayload,
+        custCode: 'OTHER2NDVNDV24012358711',
+      });
+
+      expect(parsed.transferContent).toBe('OTHER2NDVNDV24012358711');
     });
 
     it('throw khi thiếu transId', () => {

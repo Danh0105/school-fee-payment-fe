@@ -1,4 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Public } from '../common/decorators/public.decorator';
 import { CryptoKeyService } from './crypto-key.service';
 import { InqBillRequestDto, InqBillResponse } from './dto/inq-bill.dto';
@@ -23,6 +24,7 @@ export class ViettinbankController {
     private readonly crypto: CryptoKeyService,
     private readonly paymentOrdersService: PaymentOrdersService,
     private readonly paymentTransactionsService: PaymentTransactionsService,
+    private readonly config: ConfigService,
   ) {}
 
   @Public()
@@ -40,7 +42,7 @@ export class ViettinbankController {
     }
 
     const order = await this.paymentOrdersService.findByTransferContent(
-      data.custCode,
+      this.stripVac(data.custCode),
     );
     if (!order) {
       return this.buildInqBillResponse(dto, '', '', '0', '02', 'Ma KH/Hoa don khong ton tai');
@@ -148,6 +150,20 @@ export class ViettinbankController {
       errorDesc,
       signature: this.crypto.sign(signData),
     };
+  }
+
+  /**
+   * custCode from VietinBank is VAC + VAV (see doc §2.2.2: "Cấu trúc: VAC +
+   * VAV") — VAC is our fixed virtual-account prefix (config
+   * viettinbank.account), VAV is the order's own transferContent. Strip it
+   * so the lookup matches PaymentOrder.transferContent, which stores VAV
+   * only.
+   */
+  private stripVac(custCode: string): string {
+    const vac = this.config.get<string>('viettinbank.account') ?? '';
+    return vac && custCode.startsWith(vac)
+      ? custCode.slice(vac.length)
+      : custCode;
   }
 
   private timestamp(): string {

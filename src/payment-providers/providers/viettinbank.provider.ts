@@ -112,7 +112,7 @@ export class ViettinbankProvider implements PaymentProvider {
         : null,
       amount: new Decimal(amountRaw as string | number),
       transferContent: payload.custCode
-        ? toSafeString(payload.custCode).trim()
+        ? this.stripVac(toSafeString(payload.custCode).trim())
         : null,
       transactionTime: payload.transTime
         ? parseVietinbankTime(toSafeString(payload.transTime))
@@ -120,5 +120,20 @@ export class ViettinbankProvider implements PaymentProvider {
       direction: 'in',
       rawPayload: payload,
     };
+  }
+
+  /**
+   * custCode from VietinBank is VAC + VAV (see doc §2.2.2: "Cấu trúc: VAC +
+   * VAV") — VAC is our fixed virtual-account prefix (config
+   * viettinbank.account), VAV is the order's own transferContent. Strip the
+   * VAC prefix so lookups match PaymentOrder.transferContent, which stores
+   * VAV only (see generateQr() building accountNumber = account +
+   * transferContent).
+   */
+  private stripVac(custCode: string): string {
+    const vac = this.config.get<string>('viettinbank.account') ?? '';
+    return vac && custCode.startsWith(vac)
+      ? custCode.slice(vac.length)
+      : custCode;
   }
 }
