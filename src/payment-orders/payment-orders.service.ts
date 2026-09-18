@@ -10,6 +10,7 @@ import { ReceivablesService } from '../receivables/receivables.service';
 import { SchoolsService } from '../schools/schools.service';
 import { StudentsService } from '../students/students.service';
 import { PaymentProvidersService } from '../payment-providers/payment-providers.service';
+import { ViettinbankProvider } from '../payment-providers/providers/viettinbank.provider';
 import { SequenceService } from '../database/sequence.service';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
@@ -94,7 +95,20 @@ export class PaymentOrdersService {
     let qrPayload: string | null = null;
     let qrUrl: string | null = null;
 
-    if (
+    if (paymentMethod === PaymentMethod.VIETINBANK) {
+      const provider = this.paymentProvidersService.get(
+        PaymentProviderCode.VIETINBANK,
+      ) as ViettinbankProvider;
+      const qr = await provider.generateQr({
+        bankCode: school.bankCode ?? '',
+        bankAccountNumber: school.bankAccountNumber ?? '',
+        bankAccountName: school.bankAccountName ?? school.name,
+        amount: requestedAmount,
+        transferContent: orderCode,
+      });
+      qrPayload = qr.qrPayload;
+      qrUrl = qr.qrUrl;
+    } else if (
       paymentMethod === PaymentMethod.VIETQR ||
       paymentMethod === PaymentMethod.BANK_TRANSFER
     ) {
@@ -169,6 +183,13 @@ export class PaymentOrdersService {
   ): Promise<PaymentOrder | null> {
     const repo = manager ? manager.getRepository(PaymentOrder) : this.repo;
     return repo.findOne({ where: { orderCode }, relations: { items: true } });
+  }
+
+  /** transferContent is the QR/bank-transfer matching key (see reconciliation in PaymentTransactionsService.ingest). */
+  async findByTransferContent(
+    transferContent: string,
+  ): Promise<PaymentOrder | null> {
+    return this.repo.findOne({ where: { transferContent } });
   }
 
   async getQr(id: string): Promise<{

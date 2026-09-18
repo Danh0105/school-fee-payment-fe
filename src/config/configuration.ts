@@ -38,6 +38,18 @@ export default () => ({
     webhookSecret: process.env.PAYMENT_WEBHOOK_SECRET ?? '',
   },
 
+  viettinbank: {
+    baseUrl: process.env.VIETINBANK_BASE_URL ?? '',
+    clientId: process.env.VIETINBANK_CLIENT_ID ?? '',
+    clientSecret: process.env.VIETINBANK_CLIENT_SECRET ?? '',
+    providerId: process.env.VIETINBANK_PROVIDER_ID ?? '9752',
+    merchantId: process.env.VIETINBANK_MERCHANT_ID ?? '9752',
+    account: process.env.VIETINBANK_ACCOUNT ?? '',
+    privateKeyPath: process.env.VIETINBANK_PRIVATE_KEY_PATH ?? '',
+    publicKeyPath: process.env.VIETINBANK_PUBLIC_KEY_PATH ?? '',
+    notifyCertPath: process.env.VIETINBANK_NOTIFY_CERT_PATH ?? '',
+  },
+
   cors: {
     origins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
       .split(',')

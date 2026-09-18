@@ -44,6 +44,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { ExportsModule } from './exports/exports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ParentPortalModule } from './parent-portal/parent-portal.module';
+import { ViettinbankGatewayModule } from './viettinbank/viettinbank-gateway.module';
 
 @Module({
   imports: [
@@ -103,6 +104,7 @@ import { ParentPortalModule } from './parent-portal/parent-portal.module';
     ExportsModule,
     NotificationsModule,
     ParentPortalModule,
+    ViettinbankGatewayModule,
   ],
   controllers: [AppController],
   providers: [

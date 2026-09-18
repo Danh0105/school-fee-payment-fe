@@ -94,6 +94,7 @@ export enum PaymentOrderStatus {
 export enum PaymentMethod {
   BANK_TRANSFER = 'BANK_TRANSFER',
   VIETQR = 'VIETQR',
+  VIETINBANK = 'VIETINBANK',
   CASH = 'CASH',
   OTHER = 'OTHER',
 }
@@ -101,6 +102,7 @@ export enum PaymentMethod {
 export enum PaymentProviderCode {
   VIETQR = 'VIETQR',
   MANUAL_BANK = 'MANUAL_BANK',
+  VIETINBANK = 'VIETINBANK',
 }
 
 export enum PaymentTransactionStatus {

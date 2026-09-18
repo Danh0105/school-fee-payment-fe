@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PaymentProvider } from './payment-provider.interface';
 import { VietQrProvider } from './providers/vietqr.provider';
 import { ManualBankProvider } from './providers/manual-bank.provider';
+import { ViettinbankProvider } from './providers/viettinbank.provider';
 import { PaymentProviderCode } from '../common/enums/status.enum';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
@@ -13,10 +14,12 @@ export class PaymentProvidersService {
   constructor(
     vietQrProvider: VietQrProvider,
     manualBankProvider: ManualBankProvider,
+    viettinbankProvider: ViettinbankProvider,
   ) {
     this.providers = new Map<PaymentProviderCode, PaymentProvider>([
       [PaymentProviderCode.VIETQR, vietQrProvider],
       [PaymentProviderCode.MANUAL_BANK, manualBankProvider],
+      [PaymentProviderCode.VIETINBANK, viettinbankProvider],
     ]);
   }
 
