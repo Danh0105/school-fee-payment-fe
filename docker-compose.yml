@@ -52,11 +52,30 @@ services:
       ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
       ZALO_ZNS_TEMPLATE_ID: ${ZALO_ZNS_TEMPLATE_ID:-}
       ZALO_INITIAL_REFRESH_TOKEN: ${ZALO_INITIAL_REFRESH_TOKEN:-}
+      VIETINBANK_BASE_URL: ${VIETINBANK_BASE_URL:-}
+      VIETINBANK_CLIENT_ID: ${VIETINBANK_CLIENT_ID:-}
+      VIETINBANK_CLIENT_SECRET: ${VIETINBANK_CLIENT_SECRET:-}
+      VIETINBANK_PROVIDER_ID: ${VIETINBANK_PROVIDER_ID:-9752}
+      VIETINBANK_MERCHANT_ID: ${VIETINBANK_MERCHANT_ID:-9752}
+      VIETINBANK_ACCOUNT: ${VIETINBANK_ACCOUNT:-}
+      # Left empty until VietinBank returns their signed cert — see
+      # CryptoKeyService.onModuleInit(): a non-empty PRIVATE_KEY_PATH makes
+      # the app load/verify all three key files at boot and crash if any is
+      # missing, which would take down the whole API (VietQR included), not
+      # just VietinBank. Only set these three in .env once
+      # certs/viettinbank/{private,public,notify-cert}.pem are all in place.
+      VIETINBANK_PRIVATE_KEY_PATH: ${VIETINBANK_PRIVATE_KEY_PATH:-}
+      VIETINBANK_PUBLIC_KEY_PATH: ${VIETINBANK_PUBLIC_KEY_PATH:-}
+      VIETINBANK_NOTIFY_CERT_PATH: ${VIETINBANK_NOTIFY_CERT_PATH:-}
     # Bound to localhost only — a reverse proxy (nginx/Caddy) on the VPS
     # terminates TLS and forwards to this port. Do not expose 3010
     # publicly; the public-facing port must be 443 on the proxy.
     ports:
       - '127.0.0.1:3010:3010'
+    # VietinBank RSA keys/cert are secrets — never baked into the image.
+    # Mounted read-only from the deploy host's ./certs/viettinbank/.
+    volumes:
+      - ./certs:/app/certs:ro
 
 volumes:
   db_data:
