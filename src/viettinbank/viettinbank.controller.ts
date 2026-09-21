@@ -124,6 +124,7 @@ export class ViettinbankController {
         msgId: n(header.msgId),
         msgType: '1110',
         channelId: n(header.channelId),
+        gatewayId: header.gatewayId,
         providerId: n(header.providerId),
         merchantId: n(header.merchantId),
         productId: n(header.productId),

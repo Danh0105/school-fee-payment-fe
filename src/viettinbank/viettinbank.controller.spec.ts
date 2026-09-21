@@ -186,6 +186,27 @@ describe('ViettinbankController', () => {
       expect(res.header.merchantId).toBe(baseHeader.merchantId);
       expect(res.header.productId).toBe(baseHeader.productId);
     });
+
+    it('không throw và echo lại header.gatewayId khi request có kèm trường này (VPG gateway app id)', async () => {
+      const controller = makeController();
+      const dto = {
+        header: { ...baseHeader, gatewayId: 'G745_ICHI_SKILL' },
+        data: undefined,
+      } as unknown as InqBillRequestDto;
+
+      const res = await controller.inqBill(dto);
+
+      expect(res.header.gatewayId).toBe('G745_ICHI_SKILL');
+    });
+
+    it('gatewayId là undefined khi request không gửi kèm (backward compatible)', async () => {
+      const controller = makeController();
+      const dto = { header: baseHeader, data: undefined } as unknown as InqBillRequestDto;
+
+      const res = await controller.inqBill(dto);
+
+      expect(res.header.gatewayId).toBeUndefined();
+    });
   });
 
   describe('notifyBill (1200 -> 1210)', () => {

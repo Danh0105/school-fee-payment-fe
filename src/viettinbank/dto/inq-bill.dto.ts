@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsString, ValidateNested } from 'class-validator';
+import { IsOptional, IsString, ValidateNested } from 'class-validator';
 
 export class InqBillHeaderDto {
   @IsString()
@@ -10,6 +10,11 @@ export class InqBillHeaderDto {
 
   @IsString()
   channelId: string;
+
+  /** Mã app đầu bank VietinBank cung cấp (VPG), echoed back as-is in the response. */
+  @IsOptional()
+  @IsString()
+  gatewayId?: string;
 
   @IsString()
   providerId: string;
@@ -50,6 +55,7 @@ export interface InqBillResponse {
     msgId: string;
     msgType: string;
     channelId: string;
+    gatewayId?: string;
     providerId: string;
     merchantId: string;
     productId: string;
