@@ -62,7 +62,7 @@ export class ViettinbankController {
       dto,
       `Order ${order.orderCode}`,
       order.requestedAmount.toFixed(0),
-      '00',
+      '0',
       '00',
       'Xử lý thành công',
     );

@@ -156,6 +156,7 @@ describe('ViettinbankController', () => {
       expect(res.data.details.custName).toBe('Order ORD-1');
       expect(res.data.details.transId).toBe(baseData.transId);
       expect(res.data.details.custCode).toBe(baseData.custCode);
+      expect(res.data.details.billId).toBeNull();
       expect(res.header.signature).toBe('signed');
     });
 
