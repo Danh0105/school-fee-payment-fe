@@ -25,6 +25,26 @@ export class InqBillHeaderDto {
   @IsString()
   productId: string;
 
+  // Fields VietinBank's real inq-bill caller sends but the doc's request
+  // table omits (only its response table lists timestamp) — ValidationPipe
+  // runs with forbidNonWhitelisted:true, so any undeclared field 400s the
+  // whole request. Declared here just to be accepted; unused otherwise.
+  @IsOptional()
+  @IsString()
+  timestamp?: string;
+
+  @IsOptional()
+  @IsString()
+  recordNum?: string;
+
+  @IsOptional()
+  @IsString()
+  version?: string;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
+
   @IsString()
   signature: string;
 }
@@ -32,6 +52,13 @@ export class InqBillHeaderDto {
 export class InqBillDataDto {
   @IsString()
   transId: string;
+
+  // Present in VietinBank's real request (often empty string) though not
+  // in the doc's data table — see header note above on why this must be
+  // declared even though our logic doesn't use it.
+  @IsOptional()
+  @IsString()
+  channelId?: string;
 
   @IsString()
   transTime: string;
