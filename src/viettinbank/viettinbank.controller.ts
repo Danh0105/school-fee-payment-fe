@@ -68,8 +68,15 @@ export class ViettinbankController {
     );
   }
 
+  // A confirmed-working reference integration (another VietinBank partner
+  // on this same infra) registers notify-bill at bare 'api/v1/notify-bill'
+  // — no 'vpg/collection/' prefix, unlike inq-bill. The doc's §2.2.1 table
+  // lists both under vpg/collection/api/v1/, which doesn't match that
+  // reference. Registering both paths here so neither convention 404s,
+  // since getting this wrong silently drops real payment-received
+  // callbacks (order never flips to PAID despite money moving).
   @Public()
-  @Post('vpg/collection/api/v1/notify-bill')
+  @Post(['vpg/collection/api/v1/notify-bill', 'api/v1/notify-bill'])
   async notifyBill(
     @Body() dto: NotifyBillRequestDto,
   ): Promise<NotifyBillResponse> {
