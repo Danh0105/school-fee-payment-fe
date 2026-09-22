@@ -1,6 +1,7 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '../common/decorators/public.decorator';
+import { RawResponse } from '../common/decorators/raw-response.decorator';
 import { CryptoKeyService } from './crypto-key.service';
 import { InqBillRequestDto, InqBillResponse } from './dto/inq-bill.dto';
 import { NotifyBillRequestDto, NotifyBillResponse } from './dto/notify-bill.dto';
@@ -28,6 +29,7 @@ export class ViettinbankController {
   ) {}
 
   @Public()
+  @RawResponse()
   @Post('vpg/collection/api/v1/inq-bill')
   async inqBill(@Body() dto: InqBillRequestDto): Promise<InqBillResponse> {
     const { header, data } = dto;
@@ -76,6 +78,7 @@ export class ViettinbankController {
   // since getting this wrong silently drops real payment-received
   // callbacks (order never flips to PAID despite money moving).
   @Public()
+  @RawResponse()
   @Post(['vpg/collection/api/v1/notify-bill', 'api/v1/notify-bill'])
   async notifyBill(
     @Body() dto: NotifyBillRequestDto,
