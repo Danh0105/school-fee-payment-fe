@@ -11,6 +11,10 @@ import { PaymentProviderCode } from '../../common/enums/status.enum';
 import { CryptoKeyService } from '../../viettinbank/crypto-key.service';
 import { ViettinbankApiService } from '../../viettinbank/viettinbank-api.service';
 import { toSafeString } from '../../common/utils/stringify.util';
+import { buildVietQrImageUrl } from '../../common/utils/vietqr.util';
+
+/** NAPAS bank BIN for VietinBank, used only to render a scannable QR image via img.vietqr.io. */
+const VIETINBANK_BIN = '970415';
 
 /** yyyyMMddHHmmss -> Date, as sent by VietinBank in transTime. */
 function parseVietinbankTime(value: string): Date {
@@ -64,11 +68,29 @@ export class ViettinbankProvider implements PaymentProvider {
       purposeOfTrans: input.transferContent,
     });
     const data = (raw.data ?? {}) as Record<string, unknown>;
-    return {
-      qrPayload: (data.qrCode as string) ?? null,
-      qrUrl: (data.qrUrl as string) ?? null,
-      raw,
-    };
+
+    // The bank's own response only carries a base64-encoded EMV/VietQR
+    // string (doc §2.1: "data.base64QRCode ... đối tác nhận được mã base64
+    // này thì decode ra string và dùng thư viện tạo ra mã qr dạng ảnh"), not
+    // a ready-to-render image URL. Decode it for qrPayload, and build a
+    // renderable image URL the same way VietQrProvider does — via
+    // img.vietqr.io keyed by bank BIN + account, which VietinBank's own
+    // virtual account also satisfies (both are standard NAPAS VietQR).
+    const base64QrCode = data.base64QRCode as string | undefined;
+    const qrPayload = base64QrCode
+      ? Buffer.from(base64QrCode, 'base64').toString('utf8')
+      : null;
+    const qrUrl = qrPayload
+      ? buildVietQrImageUrl({
+          bankBin: VIETINBANK_BIN,
+          accountNumber,
+          amount: input.amount.toFixed(0),
+          addInfo: input.transferContent,
+          merchantName: input.bankAccountName,
+        })
+      : null;
+
+    return { qrPayload, qrUrl, raw };
   }
 
   verifyWebhook(

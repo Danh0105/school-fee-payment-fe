@@ -27,12 +27,16 @@ describe('ViettinbankProvider', () => {
     signature: 'sig',
   };
 
-  function makeProvider(verify: jest.Mock, vac?: string) {
+  function makeProvider(
+    verify: jest.Mock,
+    vac?: string,
+    generateQr?: jest.Mock,
+  ) {
     const config = {
       get: (key: string) => (key === 'viettinbank.account' ? vac : undefined),
     } as unknown as ConfigService;
     const cryptoKeys = { verify } as unknown as CryptoKeyService;
-    const api = {} as unknown as ViettinbankApiService;
+    const api = { generateQr } as unknown as ViettinbankApiService;
     return new ViettinbankProvider(config, cryptoKeys, api);
   }
 
@@ -171,6 +175,73 @@ describe('ViettinbankProvider', () => {
 
       expect(parsed.transactionTime.getTime()).toBeGreaterThanOrEqual(before);
       expect(parsed.transactionTime.getTime()).toBeLessThanOrEqual(after);
+    });
+  });
+
+  describe('generateQr', () => {
+    // Bản tin mẫu response từ tài liệu Generate VietQR §2.1 — base64QRCode
+    // decode ra EMV string kết thúc bằng "...thanh toan hoa don63047660".
+    const sampleBase64QrCode =
+      'MDAwMjAxMDEwMjEyMzg0ODAwMTBBMDAwMDAwNzI3MDExODAwMDY5NzA0MTUwMTA0dHVkdDAyMDhRUklCRlRUQTUzMDM3MDQ1NDA2NTAwMDAwNTgwMlZONjI3OTAzMDltYWN1YWhhbmcwNTEyZmI1M2NmOTItYmJjMDYxMW1ha2hhY2hoYW5nMDcwOW1hZGllbWJhbjA4MTh0aGFuaCB0b2FuIGhvYSBkb242MzA0NzY2MA==';
+
+    it('decode base64QRCode của bank thành qrPayload dạng chuỗi EMV, không phải trả nguyên base64', async () => {
+      const generateQr = jest.fn().mockResolvedValue({
+        data: { base64QRCode: sampleBase64QrCode },
+      });
+      const provider = makeProvider(jest.fn(), '1ICSPD0', generateQr);
+
+      const result = await provider.generateQr({
+        bankCode: 'ICB',
+        bankAccountNumber: '',
+        bankAccountName: 'Truong Tieu Hoc ABC',
+        amount: new Decimal('100000'),
+        transferContent: 'PAY260001',
+      });
+
+      expect(result.qrPayload).toBe(
+        Buffer.from(sampleBase64QrCode, 'base64').toString('utf8'),
+      );
+      expect(result.qrPayload).toContain('QRIBFTTA');
+      expect(result.qrPayload?.startsWith('MDAwMjAx')).toBe(false);
+    });
+
+    it('build qrUrl render được ảnh (img.vietqr.io) từ accountNumber = VAC + transferContent', async () => {
+      const generateQr = jest.fn().mockResolvedValue({
+        data: { base64QRCode: sampleBase64QrCode },
+      });
+      const provider = makeProvider(jest.fn(), '1ICSPD0', generateQr);
+
+      const result = await provider.generateQr({
+        bankCode: 'ICB',
+        bankAccountNumber: '',
+        bankAccountName: 'Truong Tieu Hoc ABC',
+        amount: new Decimal('100000'),
+        transferContent: 'PAY260001',
+      });
+
+      expect(result.qrUrl).toContain('https://img.vietqr.io/image/970415-');
+      expect(result.qrUrl).toContain('1ICSPD0PAY260001');
+      expect(generateQr).toHaveBeenCalledWith({
+        accountNumber: '1ICSPD0PAY260001',
+        amount: 100000,
+        purposeOfTrans: 'PAY260001',
+      });
+    });
+
+    it('trả về qrPayload/qrUrl null khi bank không trả base64QRCode', async () => {
+      const generateQr = jest.fn().mockResolvedValue({ data: {} });
+      const provider = makeProvider(jest.fn(), '1ICSPD0', generateQr);
+
+      const result = await provider.generateQr({
+        bankCode: 'ICB',
+        bankAccountNumber: '',
+        bankAccountName: 'Truong Tieu Hoc ABC',
+        amount: new Decimal('100000'),
+        transferContent: 'PAY260001',
+      });
+
+      expect(result.qrPayload).toBeNull();
+      expect(result.qrUrl).toBeNull();
     });
   });
 });
