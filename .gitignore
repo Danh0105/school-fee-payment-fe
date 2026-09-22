@@ -38,6 +38,9 @@ lerna-debug.log*
 # Secrets / private keys
 /certs
 
+# Playwright MCP test artifacts
+/.playwright-mcp
+
 # dotenv environment variable files
 .env
 .env.development.local

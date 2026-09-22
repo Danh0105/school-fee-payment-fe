@@ -68,6 +68,8 @@ export enum ErrorCode {
   PARENT_PHONE_MISSING = 'PARENT_PHONE_MISSING',
 
   STUDENT_IDENTIFIER_NOT_FOUND = 'STUDENT_IDENTIFIER_NOT_FOUND',
+
+  VIETINBANK_QR_GENERATION_FAILED = 'VIETINBANK_QR_GENERATION_FAILED',
 }
 
 export const ErrorMessages: Record<ErrorCode, string> = {
@@ -145,4 +147,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
 
   [ErrorCode.STUDENT_IDENTIFIER_NOT_FOUND]:
     'Không tìm thấy học sinh với mã định danh này',
+
+  [ErrorCode.VIETINBANK_QR_GENERATION_FAILED]:
+    'Không thể tạo mã QR VietinBank lúc này, vui lòng thử lại sau hoặc liên hệ hỗ trợ',
 };

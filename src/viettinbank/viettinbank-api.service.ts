@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { CryptoKeyService } from './crypto-key.service';
+import { AppException } from '../common/exceptions/app.exception';
+import { ErrorCode } from '../common/constants/error-codes';
 
 export interface GenerateQrInput {
   /** Full virtual sub-account number: VietinBank account + custCode suffix. */
@@ -70,14 +72,31 @@ export class ViettinbankApiService {
       requestId + providerId + merchantId + clientDt + input.accountNumber;
     body.signature = this.signWithPrivateKey(signDataString, privateKeyPath);
 
-    const res = await axios.post<GenerateQrResult>(baseUrl, body, {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-ibm-client-id': clientId,
-        'x-ibm-client-secret': clientSecret,
-      },
-      timeout: 15000,
-    });
+    let res;
+    try {
+      res = await axios.post<GenerateQrResult>(baseUrl, body, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-ibm-client-id': clientId,
+          'x-ibm-client-secret': clientSecret,
+        },
+        timeout: 15000,
+      });
+    } catch (err) {
+      if (isAxiosError(err)) {
+        // Log the bank's actual response body — the doc's error table (§2.2.1:
+        // 401 sai key, 403 lỗi ký số/chưa cấu hình đối tác) requires this
+        // detail to diagnose; the generic AxiosError message alone doesn't
+        // say which. Surface only a generic message to the client so a bank
+        // outage doesn't leak internal wiring details.
+        this.logger.error(
+          `VietinBank generateQr call failed: HTTP ${err.response?.status} — ${JSON.stringify(err.response?.data)}`,
+        );
+      } else {
+        this.logger.error('VietinBank generateQr call failed', err as Error);
+      }
+      throw AppException.badGateway(ErrorCode.VIETINBANK_QR_GENERATION_FAILED);
+    }
 
     const responseData = res.data;
     const verifyData =
@@ -95,7 +114,7 @@ export class ViettinbankApiService {
       )
     ) {
       this.logger.error('VietinBank generateQr response signature invalid');
-      throw new Error('Invalid VietinBank signature');
+      throw AppException.badGateway(ErrorCode.VIETINBANK_QR_GENERATION_FAILED);
     }
 
     return responseData;

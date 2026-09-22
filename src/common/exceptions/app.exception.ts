@@ -38,4 +38,9 @@ export class AppException extends HttpException {
   static badRequest(errorCode: ErrorCode, message?: string): AppException {
     return new AppException(errorCode, HttpStatus.BAD_REQUEST, message);
   }
+
+  /** For failures caused by an upstream third-party service (bank API, SMS gateway, ...). */
+  static badGateway(errorCode: ErrorCode, message?: string): AppException {
+    return new AppException(errorCode, HttpStatus.BAD_GATEWAY, message);
+  }
 }
