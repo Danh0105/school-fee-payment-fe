@@ -18,6 +18,20 @@ const n = (v: unknown) => (v === null || v === undefined ? '' : String(v));
  * money actually moved. Both require a synchronously RSA-signed response in
  * VietinBank's own envelope, so they can't go through the generic
  * WebhooksController (see payment-transactions/webhooks.controller.ts).
+ *
+ * @Body() params below are typed `unknown`, not the DTO class, on purpose:
+ * main.ts's global ValidationPipe (forbidNonWhitelisted: true) runs on
+ * every request regardless of any @UsePipes override here — pipes chain,
+ * they don't replace each other — so a stricter/looser local pipe can't
+ * win against it. NestJS's ValidationPipe only validates a param when its
+ * *reflected* type is a class; typing as `unknown` makes it skip
+ * validation entirely for this param, which is the documented way to opt
+ * a route out. VietinBank's real traffic keeps including fields the doc's
+ * request tables don't list (header.username, header/data/top-level
+ * "additionalProperties" dự phòng objects, ...) — with the global pipe
+ * engaged, each one is a full 400 rejection of an otherwise-valid bank
+ * request instead of the proper signed error-code response the doc
+ * expects. Required-field presence is still checked manually below.
  */
 @Controller()
 export class ViettinbankController {
@@ -31,8 +45,9 @@ export class ViettinbankController {
   @Public()
   @RawResponse()
   @Post('vpg/collection/api/v1/inq-bill')
-  async inqBill(@Body() dto: InqBillRequestDto): Promise<InqBillResponse> {
-    const { header, data } = dto;
+  async inqBill(@Body() body: unknown): Promise<InqBillResponse> {
+    const dto = body as InqBillRequestDto;
+    const { header, data } = dto ?? {};
 
     if (!header || !data || !data.transId || !data.transTime || !data.custCode) {
       return this.buildInqBillResponse(dto, '', '', '0', '99', 'Thiếu dữ liệu bắt buộc');
@@ -80,9 +95,8 @@ export class ViettinbankController {
   @Public()
   @RawResponse()
   @Post(['vpg/collection/api/v1/notify-bill', 'api/v1/notify-bill'])
-  async notifyBill(
-    @Body() dto: NotifyBillRequestDto,
-  ): Promise<NotifyBillResponse> {
+  async notifyBill(@Body() body: unknown): Promise<NotifyBillResponse> {
+    const dto = body as NotifyBillRequestDto;
     try {
       const result = await this.paymentTransactionsService.ingest(
         PaymentProviderCode.VIETINBANK,
