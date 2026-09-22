@@ -94,8 +94,17 @@ export class PaymentOrdersService {
     const paymentMethod = dto.paymentMethod ?? PaymentMethod.VIETQR;
     let qrPayload: string | null = null;
     let qrUrl: string | null = null;
+    // VietinBank's virtual accountNumber is VAC + VAV, capped at 19 chars
+    // total (doc §2.1: accountNumber String(19)); VietinBank onboarding
+    // confirmed VAC is fixed and VAV must be at most 12 chars. orderCode
+    // itself ("PAY" + 6-digit date + 6-digit seq = 15 chars) doesn't fit, so
+    // VietinBank orders get a separate, shorter transferContent (just the
+    // date+sequence digits, dropping the "PAY" prefix) used as VAV — while
+    // orderCode stays the full human-readable code shown in the UI.
+    let transferContent = orderCode;
 
     if (paymentMethod === PaymentMethod.VIETINBANK) {
+      transferContent = orderCode.slice(3);
       const provider = this.paymentProvidersService.get(
         PaymentProviderCode.VIETINBANK,
       ) as ViettinbankProvider;
@@ -104,7 +113,7 @@ export class PaymentOrdersService {
         bankAccountNumber: school.bankAccountNumber ?? '',
         bankAccountName: school.bankAccountName ?? school.name,
         amount: requestedAmount,
-        transferContent: orderCode,
+        transferContent,
       });
       qrPayload = qr.qrPayload;
       qrUrl = qr.qrUrl;
@@ -123,7 +132,7 @@ export class PaymentOrdersService {
           bankAccountNumber: school.bankAccountNumber,
           bankAccountName: school.bankAccountName ?? school.name,
           amount: requestedAmount,
-          transferContent: orderCode,
+          transferContent,
         });
         qrPayload = qr.qrPayload;
         qrUrl = qr.qrUrl;
@@ -147,7 +156,7 @@ export class PaymentOrdersService {
         paymentMethod,
         bankCode: school.bankCode,
         bankAccountNumber: school.bankAccountNumber,
-        transferContent: orderCode,
+        transferContent,
         qrPayload,
         qrUrl,
         expiresAt,
