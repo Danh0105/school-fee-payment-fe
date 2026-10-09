@@ -55,6 +55,8 @@ Basic Auth hoặc `POST https://api-vinvoice.viettel.vn/auth/login` qua cấu h�
 
 ## Migration/rollout
 
+Quy trình deploy chi tiết, kèm backup, smoke test và rollback: `DEPLOY_EINVOICE_RUNBOOK.md` ở thư mục gốc repo.
+
 1. Chạy migration `1789200000000-ViettelSinvoice` và `1789300000000-EInvoiceUniqueActivePayment`.
 2. Khởi động Redis và mount volume `einvoice_files`.
 3. Giữ `VIETTEL_SINVOICE_ENABLED=false` cho tới khi credential test được cấu hình.
