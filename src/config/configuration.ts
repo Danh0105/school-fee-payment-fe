@@ -67,4 +67,44 @@ export default () => ({
     // never read again.
     initialRefreshToken: process.env.ZALO_INITIAL_REFRESH_TOKEN ?? '',
   },
+
+  redis: {
+    host: process.env.REDIS_HOST ?? 'localhost',
+    port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
+    password: process.env.REDIS_PASSWORD || undefined,
+    db: parseInt(process.env.REDIS_DB ?? '0', 10),
+  },
+
+  viettelSinvoice: {
+    enabled: process.env.VIETTEL_SINVOICE_ENABLED === 'true',
+    autoIssue:
+      (process.env.VIETTEL_SINVOICE_AUTO_ISSUE ?? 'true') === 'true',
+    baseUrl:
+      process.env.VIETTEL_SINVOICE_BASE_URL ??
+      'https://api-vinvoice.viettel.vn/services/einvoiceapplication/api/',
+    authUrl:
+      process.env.VIETTEL_SINVOICE_AUTH_URL ??
+      'https://api-vinvoice.viettel.vn/auth/login',
+    webUrl:
+      process.env.VIETTEL_SINVOICE_WEB_URL ?? 'https://vinvoice.viettel.vn',
+    username: process.env.VIETTEL_SINVOICE_USERNAME ?? '',
+    password: process.env.VIETTEL_SINVOICE_PASSWORD ?? '',
+    taxCode: process.env.VIETTEL_SINVOICE_TAX_CODE ?? '',
+    templateCode: process.env.VIETTEL_SINVOICE_TEMPLATE_CODE ?? '',
+    series: process.env.VIETTEL_SINVOICE_SERIES ?? '',
+    timeout: parseInt(process.env.VIETTEL_SINVOICE_TIMEOUT ?? '90000', 10),
+    authMode: process.env.VIETTEL_SINVOICE_AUTH_MODE ?? 'TOKEN',
+    fileStoragePath:
+      process.env.VIETTEL_SINVOICE_FILE_STORAGE_PATH ?? './storage/einvoices',
+    endpointMethods: {
+      createInvoiceWithCode:
+        process.env.VIETTEL_SINVOICE_METHOD_CREATE_WITH_CODE || undefined,
+      getAllInvoiceTemplates:
+        process.env.VIETTEL_SINVOICE_METHOD_GET_TEMPLATES || undefined,
+      getAllInvoices:
+        process.env.VIETTEL_SINVOICE_METHOD_GET_ALL_INVOICES || undefined,
+      getInvoicesAll:
+        process.env.VIETTEL_SINVOICE_METHOD_GET_INVOICES_ALL || undefined,
+    },
+  },
 });

@@ -20,11 +20,25 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build: .
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       NODE_ENV: production
@@ -52,6 +66,27 @@ services:
       ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
       ZALO_ZNS_TEMPLATE_ID: ${ZALO_ZNS_TEMPLATE_ID:-}
       ZALO_INITIAL_REFRESH_TOKEN: ${ZALO_INITIAL_REFRESH_TOKEN:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      VIETTEL_SINVOICE_ENABLED: ${VIETTEL_SINVOICE_ENABLED:-false}
+      VIETTEL_SINVOICE_AUTO_ISSUE: ${VIETTEL_SINVOICE_AUTO_ISSUE:-true}
+      VIETTEL_SINVOICE_BASE_URL: ${VIETTEL_SINVOICE_BASE_URL:-https://api-vinvoice.viettel.vn/services/einvoiceapplication/api/}
+      VIETTEL_SINVOICE_AUTH_URL: ${VIETTEL_SINVOICE_AUTH_URL:-https://api-vinvoice.viettel.vn/auth/login}
+      VIETTEL_SINVOICE_WEB_URL: ${VIETTEL_SINVOICE_WEB_URL:-https://vinvoice.viettel.vn}
+      VIETTEL_SINVOICE_USERNAME: ${VIETTEL_SINVOICE_USERNAME:-}
+      VIETTEL_SINVOICE_PASSWORD: ${VIETTEL_SINVOICE_PASSWORD:-}
+      VIETTEL_SINVOICE_TAX_CODE: ${VIETTEL_SINVOICE_TAX_CODE:-}
+      VIETTEL_SINVOICE_TEMPLATE_CODE: ${VIETTEL_SINVOICE_TEMPLATE_CODE:-}
+      VIETTEL_SINVOICE_SERIES: ${VIETTEL_SINVOICE_SERIES:-}
+      VIETTEL_SINVOICE_TIMEOUT: ${VIETTEL_SINVOICE_TIMEOUT:-90000}
+      VIETTEL_SINVOICE_AUTH_MODE: ${VIETTEL_SINVOICE_AUTH_MODE:-TOKEN}
+      VIETTEL_SINVOICE_FILE_STORAGE_PATH: /app/storage/einvoices
+      VIETTEL_SINVOICE_METHOD_CREATE_WITH_CODE: ${VIETTEL_SINVOICE_METHOD_CREATE_WITH_CODE:-}
+      VIETTEL_SINVOICE_METHOD_GET_TEMPLATES: ${VIETTEL_SINVOICE_METHOD_GET_TEMPLATES:-}
+      VIETTEL_SINVOICE_METHOD_GET_ALL_INVOICES: ${VIETTEL_SINVOICE_METHOD_GET_ALL_INVOICES:-}
+      VIETTEL_SINVOICE_METHOD_GET_INVOICES_ALL: ${VIETTEL_SINVOICE_METHOD_GET_INVOICES_ALL:-}
       VIETINBANK_BASE_URL: ${VIETINBANK_BASE_URL:-}
       VIETINBANK_CLIENT_ID: ${VIETINBANK_CLIENT_ID:-}
       VIETINBANK_CLIENT_SECRET: ${VIETINBANK_CLIENT_SECRET:-}
@@ -76,6 +111,9 @@ services:
     # Mounted read-only from the deploy host's ./certs/viettinbank/.
     volumes:
       - ./certs:/app/certs:ro
+      - einvoice_files:/app/storage/einvoices
 
 volumes:
   db_data:
+  redis_data:
+  einvoice_files:

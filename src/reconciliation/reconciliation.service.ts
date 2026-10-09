@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import Decimal from 'decimal.js';
@@ -20,9 +20,12 @@ import {
   ReconciliationStatus,
   StudentCreditStatus,
 } from '../common/enums/status.enum';
+import { EInvoiceService } from '../modules/einvoice/einvoice.service';
 
 @Injectable()
 export class ReconciliationService {
+  private readonly logger = new Logger(ReconciliationService.name);
+
   constructor(
     @InjectRepository(BankReconciliation)
     private readonly repo: Repository<BankReconciliation>,
@@ -30,6 +33,7 @@ export class ReconciliationService {
     private readonly paymentAllocationsService: PaymentAllocationsService,
     private readonly receiptsService: ReceiptsService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly einvoiceService: EInvoiceService,
   ) {}
 
   async listUnmatched(
@@ -58,7 +62,7 @@ export class ReconciliationService {
     paymentOrderId: string,
     actor: { userId: string; ipAddress?: string; userAgent?: string },
   ): Promise<BankReconciliation> {
-    return this.dataSource.transaction(async (manager) => {
+    const outcome = await this.dataSource.transaction(async (manager) => {
       const reconciliationRepo = manager.getRepository(BankReconciliation);
       const transactionRepo = manager.getRepository(PaymentTransaction);
       const orderRepo = manager.getRepository(PaymentOrder);
@@ -90,12 +94,23 @@ export class ReconciliationService {
         throw AppException.badRequest(ErrorCode.PAYMENT_ORDER_NOT_PENDING);
       }
 
-      await this.paymentAllocationsService.allocateToOrder(
+      const allocation = await this.paymentAllocationsService.allocateToOrder(
         transaction,
         order,
         { userId: actor.userId },
         manager,
       );
+      if (allocation.receiptId) {
+        await this.einvoiceService.prepareForReceipt(
+          {
+            schoolId: order.schoolId,
+            paymentId: transaction.id,
+            receiptId: allocation.receiptId,
+            studentId: order.studentId,
+          },
+          manager,
+        );
+      }
 
       reconciliation.status = ReconciliationStatus.MANUAL_MATCHED;
       reconciliation.paymentOrderId = order.id;
@@ -116,8 +131,18 @@ export class ReconciliationService {
         manager,
       );
 
-      return saved;
+      return { saved, paymentId: transaction.id };
     });
+    try {
+      await this.einvoiceService.enqueuePendingForPayment(outcome.paymentId);
+    } catch (error) {
+      // The match is already committed; the PENDING invoice can be re-queued by admin retry.
+      this.logger.error(
+        `Không thể enqueue hóa đơn cho payment ${outcome.paymentId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+    return outcome.saved;
   }
 
   async unmatch(
@@ -149,6 +174,11 @@ export class ReconciliationService {
         where: { id: transactionId },
       });
 
+      await this.einvoiceService.releaseForUnmatchedPayment(
+        transactionId,
+        reason,
+        manager,
+      );
       await this.paymentAllocationsService.reverseByTransaction(
         transactionId,
         { userId: actor.userId },

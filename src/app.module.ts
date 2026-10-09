@@ -45,6 +45,8 @@ import { ExportsModule } from './exports/exports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ParentPortalModule } from './parent-portal/parent-portal.module';
 import { ViettinbankGatewayModule } from './viettinbank/viettinbank-gateway.module';
+import { BullModule } from '@nestjs/bullmq';
+import { EInvoiceModule } from './modules/einvoice/einvoice.module';
 
 @Module({
   imports: [
@@ -52,6 +54,18 @@ import { ViettinbankGatewayModule } from './viettinbank/viettinbank-gateway.modu
       isGlobal: true,
       load: [configuration],
       validate,
+    }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get<string>('redis.host') ?? 'localhost',
+          port: config.get<number>('redis.port') ?? 6379,
+          password: config.get<string>('redis.password') || undefined,
+          db: config.get<number>('redis.db') ?? 0,
+          maxRetriesPerRequest: null,
+        },
+      }),
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -105,6 +119,7 @@ import { ViettinbankGatewayModule } from './viettinbank/viettinbank-gateway.modu
     NotificationsModule,
     ParentPortalModule,
     ViettinbankGatewayModule,
+    EInvoiceModule,
   ],
   controllers: [AppController],
   providers: [

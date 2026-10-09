@@ -19,6 +19,7 @@ import {
   PaymentTransactionStatus,
   ReconciliationStatus,
 } from '../common/enums/status.enum';
+import { EInvoiceService } from '../modules/einvoice/einvoice.service';
 
 export interface IngestResult {
   duplicate: boolean;
@@ -39,6 +40,7 @@ export class PaymentTransactionsService {
     private readonly paymentAllocationsService: PaymentAllocationsService,
     private readonly schoolsService: SchoolsService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly einvoiceService: EInvoiceService,
   ) {}
 
   async ingest(
@@ -66,7 +68,7 @@ export class PaymentTransactionsService {
       };
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const transactionRepo = manager.getRepository(PaymentTransaction);
       const orderRepo = manager.getRepository(PaymentOrder);
       const reconciliationRepo = manager.getRepository(BankReconciliation);
@@ -139,12 +141,23 @@ export class PaymentTransactionsService {
             matchedAt: new Date(),
           }),
         );
-        await this.paymentAllocationsService.allocateToOrder(
+        const allocation = await this.paymentAllocationsService.allocateToOrder(
           transaction,
           order,
           { userId: actorUserId ?? null },
           manager,
         );
+        if (allocation.receiptId) {
+          await this.einvoiceService.prepareForReceipt(
+            {
+              schoolId: order.schoolId,
+              paymentId: transaction.id,
+              receiptId: allocation.receiptId,
+              studentId: order.studentId,
+            },
+            manager,
+          );
+        }
         if (actorUserId) {
           await this.auditLogsService.record(
             {
@@ -201,6 +214,19 @@ export class PaymentTransactionsService {
         matched: false,
       };
     });
+    if (result.transactionId) {
+      try {
+        await this.einvoiceService.enqueuePendingForPayment(
+          result.transactionId,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Không thể enqueue hóa đơn cho payment ${result.transactionId}; bản ghi PENDING sẽ được retry khi callback lặp hoặc admin retry`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
+    return result;
   }
 
   private async resolveSchoolId(

@@ -4,6 +4,7 @@ import { BankReconciliation } from './entities/bank-reconciliation.entity';
 import { ReconciliationService } from './reconciliation.service';
 import { ReconciliationController } from './reconciliation.controller';
 import { PaymentAllocationsModule } from '../payment-allocations/payment-allocations.module';
+import { EInvoiceModule } from '../modules/einvoice/einvoice.module';
 import { ReceiptsModule } from '../receipts/receipts.module';
 import { StudentCreditsModule } from '../student-credits/student-credits.module';
 import { PaymentTransactionsModule } from '../payment-transactions/payment-transactions.module';
@@ -15,6 +16,7 @@ import { PaymentTransactionsModule } from '../payment-transactions/payment-trans
     ReceiptsModule,
     StudentCreditsModule,
     PaymentTransactionsModule,
+    EInvoiceModule,
   ],
   providers: [ReconciliationService],
   controllers: [ReconciliationController],

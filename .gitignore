@@ -54,6 +54,7 @@ lerna-debug.log*
 
 # Runtime data
 pids
+storage/einvoices/
 *.pid
 *.seed
 *.pid.lock

@@ -9,6 +9,7 @@ import { PaymentAllocationsModule } from '../payment-allocations/payment-allocat
 import { SchoolsModule } from '../schools/schools.module';
 import { PaymentOrder } from '../payment-orders/entities/payment-order.entity';
 import { BankReconciliation } from '../reconciliation/entities/bank-reconciliation.entity';
+import { EInvoiceModule } from '../modules/einvoice/einvoice.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { BankReconciliation } from '../reconciliation/entities/bank-reconciliati
     PaymentProvidersModule,
     PaymentAllocationsModule,
     SchoolsModule,
+    EInvoiceModule,
   ],
   providers: [PaymentTransactionsService],
   controllers: [PaymentTransactionsController, WebhooksController],
