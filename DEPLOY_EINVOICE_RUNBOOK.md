@@ -1,6 +1,6 @@
 # Runbook: deploy hóa đơn điện tử Viettel S-Invoice
 
-Áp dụng cho VPS hiện tại (cập nhật 09/10/2026).
+Áp dụng cho VPS hiện tại (cập nhật 12/10/2026).
 
 | | Repo | Nhánh / commit | Chạy ở đâu trên VPS |
 |---|---|---|---|
@@ -9,7 +9,18 @@
 
 > Tên repo/thư mục bị đặt ngược: repo/thư mục có chữ **`-fe`** là **backend**, có chữ **`-be`** là **frontend**.
 
-Production đang chạy đúng HEAD `master` của cả hai repo (BE `af4a987`, FE `5f2b851`, cùng build ngày 22/09). Deploy nhánh này chỉ thêm phần hóa đơn điện tử.
+Trước deploy, production chạy đúng HEAD `master` của cả hai repo (BE `af4a987`, FE `5f2b851`, cùng build ngày 22/09). Deploy nhánh này chỉ thêm phần hóa đơn điện tử.
+
+## Trạng thái và quyết định (12/10/2026)
+
+| Mục | Trạng thái |
+|---|---|
+| Giai đoạn A | **Xong 09/10.** A1–A6 lúc 14:25–14:27 (backup ở `/root/backups/einvoice-20261009-1425/`, image cũ tag `pre-einvoice`); A7 build FE lúc 16:35; route `/einvoices`, `/einvoices/settings` có trong bản build. Tích hợp vẫn **tắt**. |
+| Giai đoạn B | **Không có môi trường test Viettel**: tài khoản được cấp là tài khoản production của ICHI SKILL. Thay bằng kiểm tra **không phát hành** (09/10, dùng chính code module): đăng nhập OK; xem trước 7.20 với payload của mapper được Viettel chấp nhận ("Hình thức thanh toán" ra TM/CK đúng); 7.21 với mã giao dịch lạ trả `NOT_FOUND_DATA` và không thử lại (đúng). Chưa kiểm chứng: ZIP có chứa XML, và phát hành thật. |
+| Thuế suất | **KCT – không chịu thuế GTGT** (mã `-1`) cho học phí của ICHI SKILL. |
+| Mẫu số / ký hiệu | `1/001` / `C26TIS`, lấy từ các hóa đơn thật trên tài khoản. Bản xem trước 7.20 lại in ký hiệu **1C21TIS**, nên phải kiểm tra ký hiệu trên hóa đơn đầu tiên ở C3. |
+| Giai đoạn thử | `VIETTEL_SINVOICE_AUTO_ISSUE=false` ở cấp hệ thống: chỉ xuất thủ công, kể cả khi cấu hình trường bật tự động. |
+| Hóa đơn đầu tiên (C3) | Chỉ xuất cho phiếu thu **thật, đã xác minh nguồn gốc**. Phiếu thu duy nhất đang có trong DB production **không** dùng khi chưa xác minh. |
 
 ## Tóm tắt 3 giai đoạn
 
@@ -259,26 +270,44 @@ rm -rf /root/sfp-einvoice-staging
 
 ### C1. Khai báo tài khoản Viettel production
 
-Mở `/opt/school-fee-payment-be/.env` bằng trình soạn thảo và thêm:
+Dùng script có sẵn trên VPS (chỉ root đọc được, không nằm trong repo). Script đọc tài khoản từ `/root/sfp-einvoice-staging/viettel.env` và làm các việc sau:
+
+- backup `.env`;
+- thêm `ENABLED=true`, `AUTO_ISSUE=false`, username, password (trong nháy đơn vì mật khẩu có ký tự `$`);
+- kiểm tra `docker compose` đọc đúng cả 4 giá trị;
+- tạo lại container API;
+- đăng nhập thử Viettel **từ trong container** (chỉ in HTTP status).
+
+Mật khẩu không bị in ra ở bước nào. Script dừng ngay nếu `.env` đã có biến `VIETTEL_SINVOICE_*`.
+
+```bash
+bash /root/sfp-einvoice-staging/c1-enable-viettel.sh
+```
+
+Mong đợi, theo thứ tự:
+
+- `• docker compose đọc đúng ENABLED, AUTO_ISSUE, USERNAME, PASSWORD`
+- `Nest application successfully started`
+- `• Biến trong container: ENABLED=true AUTO_ISSUE=false`
+- `• Đăng nhập Viettel từ container: HTTP 200, token có`
+- `✓ C1 xong`
+
+Làm tay (nếu không dùng script): thêm 4 dòng sau vào `/opt/school-fee-payment-be/.env`, rồi `docker compose up -d --wait api`.
 
 ```
 VIETTEL_SINVOICE_ENABLED=true
-VIETTEL_SINVOICE_AUTO_ISSUE=true
-VIETTEL_SINVOICE_USERNAME=<username production>
-VIETTEL_SINVOICE_PASSWORD=<password production>
+VIETTEL_SINVOICE_AUTO_ISSUE=false
+VIETTEL_SINVOICE_USERNAME='<username>'
+VIETTEL_SINVOICE_PASSWORD='<password>'
 ```
 
-- `BASE_URL`/`AUTH_URL` mặc định là production Viettel (`api-vinvoice.viettel.vn`); chỉ khai khi Viettel cấp URL khác.
+- `docker compose config` hiển thị mỗi ký tự `$` thành `$$`. Đó chỉ là cách in ra; container vẫn nhận đúng giá trị.
+- `BASE_URL`/`AUTH_URL` mặc định là production Viettel (`api-vinvoice.viettel.vn`).
 - MST, mẫu số, ký hiệu, thuế suất **không** lấy từ `.env` mà từ cấu hình từng trường (bước C2). Các biến `VIETTEL_SINVOICE_TAX_CODE/TEMPLATE_CODE/SERIES` không được code dùng.
 
-```bash
-cd /opt/school-fee-payment-be
-stat -c '%a %U' .env                  # 600 root
-docker compose up -d --wait api       # tạo lại container để nhận biến mới
-docker compose logs --since 2m api | grep -E "successfully started|ERROR"
-```
-
 Trên FE, banner "tích hợp đang tắt" phải biến mất.
+
+Rollback C1: chép lại `/root/backups/einvoice-20261009-1425/opt.env.before-c1` thành `/opt/school-fee-payment-be/.env` rồi `docker compose up -d --wait api`.
 
 ### C2. Cấu hình một trường, tạm tắt tự động xuất
 
@@ -286,22 +315,30 @@ Vào **Hóa đơn điện tử → Cấu hình**, chọn trường:
 
 - Bật hóa đơn điện tử: **bật**
 - Tự động xuất khi thanh toán được khớp: **tắt** (cho lần đầu)
-- MST bên bán, mẫu số, ký hiệu: đúng như đã đăng ký với Viettel/cơ quan thuế
-- Thuế suất (và "Học phí đã gồm thuế?" nếu thuế > 0): theo kết quả kiểm tra ở B3
+- MST bên bán: `0316660845`
+- Mẫu số: `1/001`
+- Ký hiệu: `C26TIS`
+- Thuế suất GTGT: **Không chịu thuế (KCT)**. Ô "Học phí đã gồm thuế?" để trống vì không áp dụng.
 
 ### C3. Xuất thử một hóa đơn thật
 
-1. Chọn một phiếu thu thật, số tiền nhỏ, thông tin phụ huynh đầy đủ.
+1. Chọn một phiếu thu **thật, đã đối chiếu với giao dịch ngân hàng hoặc tiền mặt thực nhận**, số tiền nhỏ, thông tin phụ huynh đầy đủ. Nếu học sinh có email phụ huynh, hệ thống sẽ tự gửi hóa đơn sau khi phát hành.
 2. Mở phiếu thu → **Xuất hóa đơn** → xác nhận.
 3. Chờ trạng thái **Đã phát hành** (thường dưới 1 phút).
 4. **Xem hóa đơn** để kiểm tra PDF, rồi Tải XML / Tải ZIP.
-5. Đối chiếu trên cổng `vinvoice.viettel.vn`.
+5. Đối chiếu trên cổng `vinvoice.viettel.vn`. Kiểm tra kỹ: **ký hiệu C26TIS** (không phải 1C21TIS), thuế suất hiển thị **KCT**, hình thức thanh toán, tên người mua.
 
 Nếu sai thông tin: **Hủy hóa đơn** (ghi lý do) hoặc lập hóa đơn thay thế trên cổng Viettel, theo quy định. Sửa cấu hình rồi làm lại.
 
 ### C4. Bật tự động xuất
 
-Khi C3 đạt yêu cầu: bật "Tự động xuất khi thanh toán được khớp" cho trường, rồi lặp lại C2–C4 cho các trường khác.
+Khi C3 đạt yêu cầu:
+
+1. Bật tự động ở **cấp hệ thống**: trong `/opt/school-fee-payment-be/.env` đổi `VIETTEL_SINVOICE_AUTO_ISSUE=false` thành `true`, rồi `docker compose up -d --wait api`.
+2. Bật "Tự động xuất khi thanh toán được khớp" cho trường.
+3. Lặp lại C2–C4 cho các trường khác.
+
+Cần cả hai công tắc (hệ thống và trường) thì mới tự xuất.
 
 Phiếu thu phát sinh **trước** khi bật không tự có hóa đơn. Mỗi phiếu phải bấm "Xuất hóa đơn" riêng (chưa có chức năng xuất hàng loạt). Cần quyết định chính sách cho các phiếu này.
 
@@ -388,4 +425,7 @@ docker compose start api
 - `npm run build` của commit FE `cab8708` thành công (build trong bản sao, không đụng `.next` đang chạy).
 - `migration:revert` hai lần (phần rollback) đưa DB về đúng `AddVietinbankProvider1789100000000`; các truy vấn theo dõi ở C5 chạy đúng (thử trên Postgres tạm).
 
-Chưa kiểm chứng (phải làm ở B3): hành vi thật của Viettel, gồm việc ZIP có chứa XML, ý nghĩa mã thuế, và email.
+- Script C1 chạy thử (`DRY_RUN=1`) trên file `.env` giả với mật khẩu giả có nhiều ký tự `$`: compose đọc đúng, container nhận đúng nguyên văn; chạy lần hai thì script tự dừng, không ghi trùng.
+- Viettel production, không phát hành (09/10): đăng nhập, xem trước 7.20, tra 7.21 với mã lạ.
+
+Chưa kiểm chứng (kiểm ở C3): phát hành thật (7.2), đối soát số (7.21), tải file (7.3, gồm việc ZIP có XML hay không), gửi email (7.33), hủy (7.9).
