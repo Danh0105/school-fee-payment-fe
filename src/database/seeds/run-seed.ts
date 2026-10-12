@@ -6,8 +6,6 @@ import { SchoolsService } from '../../schools/schools.service';
 import { UsersService } from '../../users/users.service';
 import { AcademicYearsService } from '../../academic-years/academic-years.service';
 import { ClassesService } from '../../classes/classes.service';
-import { StudentsService } from '../../students/students.service';
-import { StudentClassesService } from '../../student-classes/student-classes.service';
 import { FeeCategoriesService } from '../../fee-categories/fee-categories.service';
 import { FeePlansService } from '../../fee-plans/fee-plans.service';
 import { Company } from '../../companies/entities/company.entity';
@@ -39,8 +37,6 @@ async function run() {
     const usersService = app.get(UsersService);
     const academicYearsService = app.get(AcademicYearsService);
     const classesService = app.get(ClassesService);
-    const studentsService = app.get(StudentsService);
-    const studentClassesService = app.get(StudentClassesService);
     const feeCategoriesService = app.get(FeeCategoriesService);
     const feePlansService = app.get(FeePlansService);
 
@@ -180,10 +176,6 @@ async function run() {
 
     logger.log('Seeding classes 1A1, 1A2, 1A3...');
     const classCodes = ['1A1', '1A2', '1A3'];
-    const classes: Record<
-      string,
-      Awaited<ReturnType<typeof classesService.create>>
-    > = {};
     for (const code of classCodes) {
       const existing = await classesService.findAll({
         schoolId: school.id,
@@ -193,15 +185,15 @@ async function run() {
         limit: 1,
         skip: 0,
       });
-      classes[code] =
-        existing.data.find((c) => c.code === code) ??
-        (await classesService.create({
+      if (!existing.data.some((c) => c.code === code)) {
+        await classesService.create({
           schoolId: school.id,
           academicYearId: academicYear.id,
           code,
           name: code,
           grade: '1',
-        }));
+        });
+      }
     }
 
     logger.log('Seeding fee category "Kỹ năng sống"...');
@@ -245,44 +237,6 @@ async function run() {
     logger.log(
       `Fee plan: ${feePlan.code} — ${feePlan.defaultAmount.toFixed(2)}`,
     );
-
-    logger.log('Seeding sample students in class 1A1...');
-    const sampleStudents = [
-      {
-        fullName: 'Nguyễn Văn A',
-        parentName: 'Nguyễn Văn Bố',
-        parentPhone: '0901111111',
-      },
-      {
-        fullName: 'Trần Thị B',
-        parentName: 'Trần Văn Bố',
-        parentPhone: '0902222222',
-      },
-      {
-        fullName: 'Lê Hoàng C',
-        parentName: 'Lê Thị Mẹ',
-        parentPhone: '0903333333',
-      },
-    ];
-    for (const s of sampleStudents) {
-      const existingStudents = await studentsService.findAll({
-        schoolId: school.id,
-        search: s.fullName,
-        page: 1,
-        limit: 1,
-        skip: 0,
-      });
-      const student =
-        existingStudents.data.find((x) => x.fullName === s.fullName) ??
-        (await studentsService.create({ schoolId: school.id, ...s }));
-
-      await studentClassesService.assign({
-        studentId: student.id,
-        classId: classes['1A1'].id,
-        academicYearId: academicYear.id,
-      });
-      logger.log(`Student: ${student.studentCode} — ${student.fullName}`);
-    }
 
     logger.log('Seed completed successfully.');
     logger.log('Login credentials:');

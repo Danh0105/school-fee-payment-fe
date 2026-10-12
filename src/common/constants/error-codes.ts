@@ -67,7 +67,6 @@ export enum ErrorCode {
   ZALO_SEND_FAILED = 'ZALO_SEND_FAILED',
   PARENT_PHONE_MISSING = 'PARENT_PHONE_MISSING',
 
-  STUDENT_IDENTIFIER_NOT_FOUND = 'STUDENT_IDENTIFIER_NOT_FOUND',
   PARENT_VERIFICATION_FAILED = 'PARENT_VERIFICATION_FAILED',
 
   VIETINBANK_QR_GENERATION_FAILED = 'VIETINBANK_QR_GENERATION_FAILED',
@@ -146,10 +145,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCode.ZALO_SEND_FAILED]: 'Gửi thông báo qua Zalo thất bại',
   [ErrorCode.PARENT_PHONE_MISSING]: 'Học sinh chưa có số điện thoại phụ huynh',
 
-  [ErrorCode.STUDENT_IDENTIFIER_NOT_FOUND]:
-    'Không tìm thấy học sinh với mã định danh này',
   [ErrorCode.PARENT_VERIFICATION_FAILED]:
-    'Thông tin xác minh phụ huynh không hợp lệ hoặc đã hết hạn',
+    'Số điện thoại hoặc mật khẩu ngày sinh không đúng',
 
   [ErrorCode.VIETINBANK_QR_GENERATION_FAILED]:
     'Không thể tạo mã QR VietinBank lúc này, vui lòng thử lại sau hoặc liên hệ hỗ trợ',

@@ -24,7 +24,7 @@ export class ParentJwtStrategy extends PassportStrategy(
   }
 
   validate(payload: ParentJwtPayload): ParentAuthUser {
-    if (payload.authVersion !== 2 || !payload.studentId) {
+    if (payload.authVersion !== 3 || !payload.studentId) {
       throw AppException.unauthorized(ErrorCode.PARENT_VERIFICATION_FAILED);
     }
     return { studentId: payload.studentId };

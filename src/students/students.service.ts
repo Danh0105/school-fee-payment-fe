@@ -12,10 +12,6 @@ import { SchoolsService } from '../schools/schools.service';
 import { SequenceService } from '../database/sequence.service';
 import { StudentClass } from '../student-classes/entities/student-class.entity';
 import { applySchoolScope } from '../common/utils/school-scope.util';
-import * as bcrypt from 'bcrypt';
-
-const DUMMY_PARENT_PASSWORD_HASH =
-  '$2b$10$zOTAHW.FJ4mKSBcZgfXD0.tDr51J6uv077nBtj1wSwdSzW25KSXOa';
 
 @Injectable()
 export class StudentsService {
@@ -41,14 +37,7 @@ export class StudentsService {
         identifierCode,
       );
     }
-    const { parentPassword, ...studentData } = dto;
-    const createDto = {
-      ...studentData,
-      identifierCode,
-      parentPasswordHash: parentPassword
-        ? await bcrypt.hash(parentPassword, 10)
-        : null,
-    };
+    const createDto = { ...dto, identifierCode };
 
     const requestedCode = dto.studentCode?.trim();
     if (requestedCode) {
@@ -101,14 +90,12 @@ export class StudentsService {
     }
   }
 
-  private async saveNewStudent(
+  private saveNewStudent(
     repo: Repository<Student>,
     dto: CreateStudentDto,
     studentCode: string,
   ): Promise<Student> {
-    const student = await repo.save(repo.create({ ...dto, studentCode }));
-    delete student.parentPasswordHash;
-    return student;
+    return repo.save(repo.create({ ...dto, studentCode }));
   }
 
   private isUniqueViolation(error: unknown): boolean {
@@ -191,74 +178,27 @@ export class StudentsService {
     return student;
   }
 
-  async validateParentPassword(
-    studentId: string,
+  async findByParentCredentials(
     schoolId: string,
-    password: string,
-  ): Promise<boolean> {
-    const student = await this.repo
-      .createQueryBuilder('student')
-      .addSelect('student.parentPasswordHash')
-      .where('student.id = :studentId', { studentId })
-      .andWhere('student.schoolId = :schoolId', { schoolId })
-      .andWhere('student.deletedAt IS NULL')
-      .getOne();
-
-    const matches = await bcrypt.compare(
-      password,
-      student?.parentPasswordHash ?? DUMMY_PARENT_PASSWORD_HASH,
-    );
-    return Boolean(student?.parentPasswordHash && matches);
-  }
-
-  /**
-   * Looks up students by their identifierCode (CCCD/mã định danh) *within a
-   * given school*, for the parent-portal access flow — a parent picks their
-   * child's school, then enters the identifierCode, to reach that student's
-   * payment page (no account/password involved). identifierCode is unique
-   * per school at the DB level (see migration UniqueStudentIdentifierCode),
-   * so this should only ever return 0 or 1 rows for well-formed data — it
-   * still returns an array so the caller can defend against pre-existing
-   * duplicate data created before that constraint was added.
-   */
-  async findByIdentifierCode(
-    identifierCode: string,
-    schoolId: string,
+    parentPhone: string,
+    dateOfBirth: string,
   ): Promise<Student[]> {
-    return this.repo.find({
-      where: { identifierCode, schoolId, deletedAt: IsNull() },
-      relations: { school: true },
-    });
-  }
-
-  /**
-   * Privacy-preserving lookup used by the public parent flow. The caller
-   * enforces a minimum query length and exposes only masked results; this
-   * query returns at most `limit` candidates and never a public total count.
-   */
-  async searchByFullName(
-    fullName: string,
-    schoolId: string,
-    limit = 20,
-  ): Promise<Student[]> {
-    const normalizedName = fullName.trim().replace(/\s+/g, ' ');
-
+    const phoneSuffix = parentPhone.replace(/\D/g, '').slice(-9);
     return this.repo
       .createQueryBuilder('student')
       .where('student.deletedAt IS NULL')
       .andWhere('student.schoolId = :schoolId', { schoolId })
+      .andWhere('student.dateOfBirth = :dateOfBirth', { dateOfBirth })
       .andWhere(
-        `POSITION(LOWER(:fullName) IN LOWER(regexp_replace(TRIM(student.fullName), '\\s+', ' ', 'g'))) > 0`,
-        { fullName: normalizedName },
+        `RIGHT(regexp_replace(COALESCE(student.parentPhone, ''), '\\D', '', 'g'), 9) = :phoneSuffix`,
+        { phoneSuffix },
       )
-      .orderBy('student.createdAt', 'ASC')
-      .take(limit)
+      .take(2)
       .getMany();
   }
 
   async update(id: string, dto: UpdateStudentDto): Promise<Student> {
     const student = await this.findById(id);
-    const { parentPassword, ...studentData } = dto;
     const identifierCode = dto.identifierCode?.trim() || undefined;
     if (identifierCode && identifierCode !== student.identifierCode) {
       await this.assertIdentifierCodeAvailable(
@@ -268,18 +208,9 @@ export class StudentsService {
         student.id,
       );
     }
-    Object.assign(
-      student,
-      studentData,
-      identifierCode ? { identifierCode } : {},
-      parentPassword
-        ? { parentPasswordHash: await bcrypt.hash(parentPassword, 10) }
-        : {},
-    );
+    Object.assign(student, dto, identifierCode ? { identifierCode } : {});
     try {
-      const saved = await this.repo.save(student);
-      delete saved.parentPasswordHash;
-      return saved;
+      return await this.repo.save(student);
     } catch (error) {
       throw this.mapUniqueViolation(error);
     }

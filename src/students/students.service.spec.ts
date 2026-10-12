@@ -4,7 +4,6 @@ import { School } from '../schools/entities/school.entity';
 import { SchoolsService } from '../schools/schools.service';
 import { Student } from './entities/student.entity';
 import { StudentsService } from './students.service';
-import * as bcrypt from 'bcrypt';
 
 describe('StudentsService generated code', () => {
   it('generates different student codes without client input', async () => {
@@ -36,17 +35,16 @@ describe('StudentsService generated code', () => {
     expect(next).toHaveBeenCalledTimes(2);
   });
 
-  it('uses a normalized partial name for the public parent lookup', async () => {
+  it('matches parent accounts by phone suffix and student birth date', async () => {
     const schoolId = '00000000-0000-4000-8000-000000000001';
     const getMany = jest.fn(() => Promise.resolve([]));
     const queryBuilder = {
       where: jest.fn(),
       andWhere: jest.fn(),
-      orderBy: jest.fn(),
       take: jest.fn(),
       getMany,
     };
-    for (const method of ['where', 'andWhere', 'orderBy', 'take'] as const) {
+    for (const method of ['where', 'andWhere', 'take'] as const) {
       queryBuilder[method].mockReturnValue(queryBuilder);
     }
     const createQueryBuilder = jest.fn(() => queryBuilder);
@@ -56,49 +54,22 @@ describe('StudentsService generated code', () => {
       {} as SequenceService,
     );
 
-    await service.searchByFullName('  Nguyễn   Văn An  ', schoolId);
+    await service.findByParentCredentials(
+      schoolId,
+      '+84 901 234 567',
+      '2015-08-15',
+    );
 
     expect(createQueryBuilder).toHaveBeenCalledWith('student');
     expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-      expect.stringContaining('POSITION(LOWER(:fullName)'),
-      { fullName: 'Nguyễn Văn An' },
+      'student.dateOfBirth = :dateOfBirth',
+      { dateOfBirth: '2015-08-15' },
     );
-    expect(queryBuilder.take).toHaveBeenCalledWith(20);
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('RIGHT(regexp_replace'),
+      { phoneSuffix: '901234567' },
+    );
+    expect(queryBuilder.take).toHaveBeenCalledWith(2);
     expect(getMany).toHaveBeenCalled();
-  });
-
-  it('hashes the parent password and never returns the hash', async () => {
-    const schoolId = '00000000-0000-4000-8000-000000000001';
-    const school = { id: schoolId, code: 'SCH000001' } as School;
-    let persisted: Student | undefined;
-    const repo = {
-      findOne: jest.fn(() => Promise.resolve(null)),
-      create: jest.fn((value: Partial<Student>) => value as Student),
-      save: jest.fn((value: Student) => {
-        persisted = { ...value };
-        return Promise.resolve(value);
-      }),
-    };
-    const service = new StudentsService(
-      repo as unknown as Repository<Student>,
-      {
-        findById: jest.fn(() => Promise.resolve(school)),
-      } as unknown as SchoolsService,
-      { next: jest.fn(() => Promise.resolve(1)) } as unknown as SequenceService,
-    );
-
-    const result = await service.create({
-      schoolId,
-      fullName: 'Học sinh A',
-      parentPassword: 'Parent@123',
-    });
-
-    expect(persisted?.parentPasswordHash).toMatch(/^\$2[aby]\$/);
-    await expect(
-      bcrypt.compare('Parent@123', persisted!.parentPasswordHash!),
-    ).resolves.toBe(true);
-    expect(persisted).not.toHaveProperty('parentPassword');
-    expect(result).not.toHaveProperty('parentPasswordHash');
-    expect(result).not.toHaveProperty('parentPassword');
   });
 });

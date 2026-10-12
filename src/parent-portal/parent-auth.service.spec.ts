@@ -6,173 +6,115 @@ import { Student } from '../students/entities/student.entity';
 import { StudentsService } from '../students/students.service';
 import { ParentAuthService } from './parent-auth.service';
 
-describe('ParentAuthService name lookup', () => {
+describe('ParentAuthService phone login', () => {
   const schoolId = '00000000-0000-4000-8000-000000000001';
   const student = {
     id: '00000000-0000-4000-8000-000000000002',
     schoolId,
     studentCode: 'SCH000001000000001',
-    identifierCode: '012345678901',
-    fullName: 'Nguyễn Văn An',
-    dateOfBirth: '2012-03-04',
-    phone: null,
-    parentPhone: '0912 345 678',
+    fullName: 'Học sinh thật',
+    dateOfBirth: '2015-08-15',
+    parentPhone: '0901 234 567',
   } as Student;
-
-  const configValues: Record<string, string> = {
-    'parentJwt.secret': 'parent-access-secret',
-    'parentJwt.expiresIn': '30d',
-    'parentLookupJwt.secret': 'parent-lookup-secret',
-    'parentLookupJwt.expiresIn': '10m',
-  };
 
   function setup() {
     const studentsService = {
-      searchByFullName: jest.fn(),
-      findById: jest.fn(),
-      validateParentPassword: jest.fn(),
+      findByParentCredentials: jest.fn(),
     };
     const jwtService = {
-      signAsync: jest.fn((payload: Record<string, unknown>) =>
-        Promise.resolve(
-          payload.purpose === 'parent-student-lookup'
-            ? 'signed-lookup-token'
-            : 'signed-access-token',
-        ),
-      ),
-      verifyAsync: jest.fn(),
+      signAsync: jest.fn(() => Promise.resolve('signed-access-token')),
     };
     const config = {
-      get: jest.fn((key: string) => configValues[key]),
+      get: jest.fn((key: string) => {
+        if (key === 'parentJwt.secret') return 'parent-access-secret';
+        if (key === 'parentJwt.expiresIn') return '30d';
+        return undefined;
+      }),
     };
     const service = new ParentAuthService(
       studentsService as unknown as StudentsService,
       jwtService as unknown as JwtService,
       config as unknown as ConfigService,
     );
-
     return { service, studentsService, jwtService };
   }
 
-  async function issueLookupPayload(
-    service: ParentAuthService,
-    studentsService: ReturnType<typeof setup>['studentsService'],
-    jwtService: ReturnType<typeof setup>['jwtService'],
-  ) {
-    studentsService.searchByFullName.mockResolvedValue([student]);
-    await service.searchByFullName({ schoolId, fullName: student.fullName });
-    return jwtService.signAsync.mock.calls[0][0];
-  }
-
-  it('returns only masked hints and a short-lived lookup token', async () => {
+  it('uses the parent phone and DDMMYYYY birth date to issue access', async () => {
     const { service, studentsService, jwtService } = setup();
-    studentsService.searchByFullName.mockResolvedValue([student]);
-
-    const result = await service.searchByFullName({
-      schoolId,
-      fullName: '  Nguyễn   Văn An  ',
-    });
-
-    expect(studentsService.searchByFullName).toHaveBeenCalledWith(
-      'Nguyễn Văn An',
-      schoolId,
-    );
-    expect(result).toEqual([
-      {
-        lookupToken: 'signed-lookup-token',
-        displayName: 'N***** V** A*',
-        dateOfBirthHint: '**/**/2012',
-        parentPhoneHint: '*******678',
-      },
-    ]);
-    expect(result[0]).not.toHaveProperty('id');
-    expect(result[0]).not.toHaveProperty('studentCode');
-    expect(result[0]).not.toHaveProperty('identifierCode');
-    expect(jwtService.signAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        purpose: 'parent-student-lookup',
-        schoolId,
-      }),
-      { secret: 'parent-lookup-secret', expiresIn: '10m' },
-    );
-    const signedPayload = jwtService.signAsync.mock.calls[0][0];
-    expect(signedPayload).not.toHaveProperty('candidateId');
-    expect(signedPayload.candidateRef).toEqual(expect.any(String));
-    expect(signedPayload.candidateProof).toEqual(expect.any(String));
-  });
-
-  it('returns no results without querying students for fewer than three characters', async () => {
-    const { service, studentsService } = setup();
+    studentsService.findByParentCredentials.mockResolvedValue([student]);
 
     await expect(
-      service.searchByFullName({ schoolId, query: 'An' }),
-    ).resolves.toEqual([]);
-    expect(studentsService.searchByFullName).not.toHaveBeenCalled();
-  });
-
-  it('issues a real parent token only after the password matches the candidate', async () => {
-    const { service, studentsService, jwtService } = setup();
-    const payload = await issueLookupPayload(
-      service,
-      studentsService,
-      jwtService,
-    );
-    jwtService.verifyAsync.mockResolvedValue(payload);
-    studentsService.findById.mockResolvedValue(student);
-    studentsService.validateParentPassword.mockResolvedValue(true);
-
-    const result = await service.verifyLookup({
-      lookupToken: 'signed-lookup-token',
-      password: 'Parent@123',
-    });
-
-    expect(studentsService.validateParentPassword).toHaveBeenCalledWith(
-      student.id,
-      schoolId,
-      'Parent@123',
-    );
-    expect(result).toEqual({
+      service.login({
+        schoolId,
+        username: '+84 901 234 567',
+        password: '15082015',
+      }),
+    ).resolves.toEqual({
       accessToken: 'signed-access-token',
       student,
     });
-    expect(jwtService.signAsync).toHaveBeenLastCalledWith(
-      { studentId: student.id, authVersion: 2 },
+
+    expect(studentsService.findByParentCredentials).toHaveBeenCalledWith(
+      schoolId,
+      '84901234567',
+      '2015-08-15',
+    );
+    expect(jwtService.signAsync).toHaveBeenCalledWith(
+      { studentId: student.id, authVersion: 3 },
       { secret: 'parent-access-secret', expiresIn: '30d' },
     );
   });
 
-  it('does not issue access from a valid lookup token without a matching password', async () => {
-    const { service, studentsService, jwtService } = setup();
-    const payload = await issueLookupPayload(
-      service,
-      studentsService,
-      jwtService,
-    );
-    jwtService.verifyAsync.mockResolvedValue(payload);
-    studentsService.findById.mockResolvedValue(student);
-    studentsService.validateParentPassword.mockResolvedValue(false);
+  it('rejects an invalid calendar date without querying students', async () => {
+    const { service, studentsService } = setup();
 
     await expect(
-      service.verifyLookup({
-        lookupToken: 'signed-lookup-token',
-        password: 'WrongPassword',
+      service.login({
+        schoolId,
+        username: '0901234567',
+        password: '31022015',
+      }),
+    ).rejects.toMatchObject<AppException>({
+      errorCode: ErrorCode.PARENT_VERIFICATION_FAILED,
+    });
+    expect(studentsService.findByParentCredentials).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous credentials instead of selecting a student', async () => {
+    const { service, studentsService } = setup();
+    studentsService.findByParentCredentials.mockResolvedValue([
+      student,
+      { ...student, id: '00000000-0000-4000-8000-000000000003' },
+    ]);
+
+    await expect(
+      service.login({
+        schoolId,
+        username: '0901234567',
+        password: '15082015',
       }),
     ).rejects.toMatchObject<AppException>({
       errorCode: ErrorCode.PARENT_VERIFICATION_FAILED,
     });
   });
 
-  it('maps invalid or expired lookup tokens to the generic verification error', async () => {
-    const { service, jwtService } = setup();
-    jwtService.verifyAsync.mockRejectedValue(new Error('jwt expired'));
+  it('locks the account key after five failed attempts', async () => {
+    const { service, studentsService } = setup();
+    studentsService.findByParentCredentials.mockResolvedValue([]);
+    const dto = {
+      schoolId,
+      username: '0901234567',
+      password: '15082015',
+    };
 
-    await expect(
-      service.verifyLookup({
-        lookupToken: 'expired-token',
-        password: 'Parent@123',
-      }),
-    ).rejects.toMatchObject<AppException>({
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await expect(service.login(dto)).rejects.toMatchObject<AppException>({
+        errorCode: ErrorCode.PARENT_VERIFICATION_FAILED,
+      });
+    }
+    await expect(service.login(dto)).rejects.toMatchObject<AppException>({
       errorCode: ErrorCode.PARENT_VERIFICATION_FAILED,
     });
+    expect(studentsService.findByParentCredentials).toHaveBeenCalledTimes(5);
   });
 });
