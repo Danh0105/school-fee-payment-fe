@@ -29,7 +29,7 @@ describe('ParentAuthService name lookup', () => {
 
   function setup() {
     const studentsService = {
-      findByExactFullName: jest.fn(),
+      searchByFullName: jest.fn(),
       findByIdentifierCode: jest.fn(),
     };
     const jwtService = {
@@ -69,14 +69,14 @@ describe('ParentAuthService name lookup', () => {
 
   it('returns only masked hints and a short-lived lookup token', async () => {
     const { service, studentsService, jwtService } = setup();
-    studentsService.findByExactFullName.mockResolvedValue([student]);
+    studentsService.searchByFullName.mockResolvedValue([student]);
 
     const result = await service.searchByFullName({
       schoolId,
       fullName: '  Nguyễn   Văn An  ',
     });
 
-    expect(studentsService.findByExactFullName).toHaveBeenCalledWith(
+    expect(studentsService.searchByFullName).toHaveBeenCalledWith(
       '  Nguyễn   Văn An  ',
       schoolId,
     );

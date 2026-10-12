@@ -199,11 +199,11 @@ export class StudentsService {
   }
 
   /**
-   * Privacy-preserving lookup used by the public parent flow. Matching is
-   * exact after trimming/collapsing whitespace and is case-insensitive; a
-   * public caller cannot use a short fragment to enumerate the student list.
+   * Privacy-preserving lookup used by the public parent flow. The caller
+   * enforces a minimum query length and exposes only masked results; this
+   * query returns at most `limit` candidates and never a public total count.
    */
-  async findByExactFullName(
+  async searchByFullName(
     fullName: string,
     schoolId: string,
     limit = 20,
@@ -215,7 +215,7 @@ export class StudentsService {
       .where('student.deletedAt IS NULL')
       .andWhere('student.schoolId = :schoolId', { schoolId })
       .andWhere(
-        `LOWER(regexp_replace(TRIM(student.fullName), '\\s+', ' ', 'g')) = LOWER(:fullName)`,
+        `POSITION(LOWER(:fullName) IN LOWER(regexp_replace(TRIM(student.fullName), '\\s+', ' ', 'g'))) > 0`,
         { fullName: normalizedName },
       )
       .orderBy('student.createdAt', 'ASC')

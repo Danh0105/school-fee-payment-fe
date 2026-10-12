@@ -71,8 +71,13 @@ export class ParentAuthService {
   async searchByFullName(
     dto: SearchStudentByNameDto,
   ): Promise<ParentStudentLookupResult[]> {
-    const students = await this.studentsService.findByExactFullName(
-      dto.fullName,
+    const fullName =
+      dto.fullName ?? dto.query ?? dto.search ?? dto.name ?? dto.keyword;
+    if (!fullName) {
+      throw AppException.badRequest(ErrorCode.VALIDATION_ERROR);
+    }
+    const students = await this.studentsService.searchByFullName(
+      fullName,
       dto.schoolId,
     );
 

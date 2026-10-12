@@ -35,7 +35,7 @@ describe('StudentsService generated code', () => {
     expect(next).toHaveBeenCalledTimes(2);
   });
 
-  it('uses an exact normalized name for the public parent lookup', async () => {
+  it('uses a normalized partial name for the public parent lookup', async () => {
     const schoolId = '00000000-0000-4000-8000-000000000001';
     const getMany = jest.fn(() => Promise.resolve([]));
     const queryBuilder = {
@@ -55,16 +55,12 @@ describe('StudentsService generated code', () => {
       {} as SequenceService,
     );
 
-    await service.findByExactFullName('  Nguyễn   Văn An  ', schoolId);
+    await service.searchByFullName('  Nguyễn   Văn An  ', schoolId);
 
     expect(createQueryBuilder).toHaveBeenCalledWith('student');
     expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-      expect.stringContaining('= LOWER(:fullName)'),
+      expect.stringContaining('POSITION(LOWER(:fullName)'),
       { fullName: 'Nguyễn Văn An' },
-    );
-    expect(queryBuilder.andWhere).not.toHaveBeenCalledWith(
-      expect.stringContaining('ILIKE'),
-      expect.anything(),
     );
     expect(queryBuilder.take).toHaveBeenCalledWith(20);
     expect(getMany).toHaveBeenCalled();
