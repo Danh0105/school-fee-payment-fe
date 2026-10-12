@@ -55,6 +55,9 @@ export class Student extends BaseEntity {
   @Column({ type: 'varchar', length: 255, nullable: true })
   parentEmail: string | null;
 
+  @Column({ type: 'varchar', length: 255, nullable: true, select: false })
+  parentPasswordHash?: string | null;
+
   @Column({ type: 'enum', enum: StudentStatus, default: StudentStatus.ACTIVE })
   status: StudentStatus;
 

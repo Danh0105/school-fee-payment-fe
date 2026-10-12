@@ -3,7 +3,6 @@ import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { SchoolsService } from '../schools/schools.service';
 import { ParentAuthService } from './parent-auth.service';
-import { StudentAccessDto } from './dto/student-access.dto';
 import { SearchStudentByNameDto } from './dto/search-student-by-name.dto';
 import { VerifyStudentAccessDto } from './dto/verify-student-access.dto';
 
@@ -21,12 +20,6 @@ export class ParentAuthController {
   @Get('schools')
   async listSchools() {
     return this.schoolsService.findAllPublicSummary();
-  }
-
-  @Public()
-  @Post('access')
-  async access(@Body() dto: StudentAccessDto) {
-    return this.service.accessByIdentifierCode(dto);
   }
 
   @Public()

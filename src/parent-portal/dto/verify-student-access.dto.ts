@@ -1,5 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, MaxLength, MinLength } from 'class-validator';
 
 export class VerifyStudentAccessDto {
   @ApiProperty({
@@ -10,13 +10,14 @@ export class VerifyStudentAccessDto {
   @MinLength(1)
   lookupToken: string;
 
-  @ApiPropertyOptional({
-    description:
-      'Mã định danh (CCCD) tùy chọn. Nếu có, backend vẫn đối chiếu trước khi cấp quyền.',
+  @ApiProperty({
+    minLength: 8,
+    maxLength: 72,
+    writeOnly: true,
+    description: 'Mật khẩu tài khoản phụ huynh đã đặt trong hồ sơ học sinh.',
   })
-  @IsOptional()
   @IsString()
-  @MinLength(1)
-  @MaxLength(50)
-  identifierCode?: string;
+  @MinLength(8)
+  @MaxLength(72)
+  password: string;
 }

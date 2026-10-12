@@ -12,6 +12,10 @@ import { SchoolsService } from '../schools/schools.service';
 import { SequenceService } from '../database/sequence.service';
 import { StudentClass } from '../student-classes/entities/student-class.entity';
 import { applySchoolScope } from '../common/utils/school-scope.util';
+import * as bcrypt from 'bcrypt';
+
+const DUMMY_PARENT_PASSWORD_HASH =
+  '$2b$10$zOTAHW.FJ4mKSBcZgfXD0.tDr51J6uv077nBtj1wSwdSzW25KSXOa';
 
 @Injectable()
 export class StudentsService {
@@ -37,7 +41,14 @@ export class StudentsService {
         identifierCode,
       );
     }
-    const createDto = { ...dto, identifierCode };
+    const { parentPassword, ...studentData } = dto;
+    const createDto = {
+      ...studentData,
+      identifierCode,
+      parentPasswordHash: parentPassword
+        ? await bcrypt.hash(parentPassword, 10)
+        : null,
+    };
 
     const requestedCode = dto.studentCode?.trim();
     if (requestedCode) {
@@ -90,12 +101,14 @@ export class StudentsService {
     }
   }
 
-  private saveNewStudent(
+  private async saveNewStudent(
     repo: Repository<Student>,
     dto: CreateStudentDto,
     studentCode: string,
   ): Promise<Student> {
-    return repo.save(repo.create({ ...dto, studentCode }));
+    const student = await repo.save(repo.create({ ...dto, studentCode }));
+    delete student.parentPasswordHash;
+    return student;
   }
 
   private isUniqueViolation(error: unknown): boolean {
@@ -178,6 +191,26 @@ export class StudentsService {
     return student;
   }
 
+  async validateParentPassword(
+    studentId: string,
+    schoolId: string,
+    password: string,
+  ): Promise<boolean> {
+    const student = await this.repo
+      .createQueryBuilder('student')
+      .addSelect('student.parentPasswordHash')
+      .where('student.id = :studentId', { studentId })
+      .andWhere('student.schoolId = :schoolId', { schoolId })
+      .andWhere('student.deletedAt IS NULL')
+      .getOne();
+
+    const matches = await bcrypt.compare(
+      password,
+      student?.parentPasswordHash ?? DUMMY_PARENT_PASSWORD_HASH,
+    );
+    return Boolean(student?.parentPasswordHash && matches);
+  }
+
   /**
    * Looks up students by their identifierCode (CCCD/mã định danh) *within a
    * given school*, for the parent-portal access flow — a parent picks their
@@ -225,6 +258,7 @@ export class StudentsService {
 
   async update(id: string, dto: UpdateStudentDto): Promise<Student> {
     const student = await this.findById(id);
+    const { parentPassword, ...studentData } = dto;
     const identifierCode = dto.identifierCode?.trim() || undefined;
     if (identifierCode && identifierCode !== student.identifierCode) {
       await this.assertIdentifierCodeAvailable(
@@ -234,9 +268,18 @@ export class StudentsService {
         student.id,
       );
     }
-    Object.assign(student, dto, identifierCode ? { identifierCode } : {});
+    Object.assign(
+      student,
+      studentData,
+      identifierCode ? { identifierCode } : {},
+      parentPassword
+        ? { parentPasswordHash: await bcrypt.hash(parentPassword, 10) }
+        : {},
+    );
     try {
-      return await this.repo.save(student);
+      const saved = await this.repo.save(student);
+      delete saved.parentPasswordHash;
+      return saved;
     } catch (error) {
       throw this.mapUniqueViolation(error);
     }

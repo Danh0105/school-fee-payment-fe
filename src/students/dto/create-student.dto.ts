@@ -10,6 +10,8 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
+  MinLength,
 } from 'class-validator';
 import { StudentStatus } from '../../common/enums/status.enum';
 import { Gender } from '../entities/student.entity';
@@ -67,6 +69,19 @@ export class CreateStudentDto {
   @IsOptional()
   @IsEmail()
   parentEmail?: string;
+
+  @ApiPropertyOptional({
+    minLength: 8,
+    maxLength: 72,
+    writeOnly: true,
+    description:
+      'Mật khẩu để phụ huynh truy cập hồ sơ học sinh. Chỉ nhận khi tạo/đổi mật khẩu và không bao giờ được trả về.',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  parentPassword?: string;
 
   @ApiPropertyOptional({ enum: StudentStatus })
   @IsOptional()

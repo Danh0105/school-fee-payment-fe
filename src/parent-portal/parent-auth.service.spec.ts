@@ -29,8 +29,8 @@ describe('ParentAuthService name lookup', () => {
   function setup() {
     const studentsService = {
       searchByFullName: jest.fn(),
-      findByIdentifierCode: jest.fn(),
       findById: jest.fn(),
+      validateParentPassword: jest.fn(),
     };
     const jwtService = {
       signAsync: jest.fn((payload: Record<string, unknown>) =>
@@ -110,36 +110,7 @@ describe('ParentAuthService name lookup', () => {
     expect(studentsService.searchByFullName).not.toHaveBeenCalled();
   });
 
-  it('issues a real parent token only after the identifier matches the candidate', async () => {
-    const { service, studentsService, jwtService } = setup();
-    const payload = await issueLookupPayload(
-      service,
-      studentsService,
-      jwtService,
-    );
-    jwtService.verifyAsync.mockResolvedValue(payload);
-    studentsService.findByIdentifierCode.mockResolvedValue([student]);
-
-    const result = await service.verifyLookup({
-      lookupToken: 'signed-lookup-token',
-      identifierCode: ` ${student.identifierCode} `,
-    });
-
-    expect(studentsService.findByIdentifierCode).toHaveBeenCalledWith(
-      student.identifierCode,
-      schoolId,
-    );
-    expect(result).toEqual({
-      accessToken: 'signed-access-token',
-      student,
-    });
-    expect(jwtService.signAsync).toHaveBeenLastCalledWith(
-      { studentId: student.id },
-      { secret: 'parent-access-secret', expiresIn: '30d' },
-    );
-  });
-
-  it('issues access from a valid lookup token without requiring an identifier', async () => {
+  it('issues a real parent token only after the password matches the candidate', async () => {
     const { service, studentsService, jwtService } = setup();
     const payload = await issueLookupPayload(
       service,
@@ -148,20 +119,29 @@ describe('ParentAuthService name lookup', () => {
     );
     jwtService.verifyAsync.mockResolvedValue(payload);
     studentsService.findById.mockResolvedValue(student);
+    studentsService.validateParentPassword.mockResolvedValue(true);
 
     const result = await service.verifyLookup({
       lookupToken: 'signed-lookup-token',
+      password: 'Parent@123',
     });
 
-    expect(studentsService.findByIdentifierCode).not.toHaveBeenCalled();
-    expect(studentsService.findById).toHaveBeenCalledWith(student.id);
+    expect(studentsService.validateParentPassword).toHaveBeenCalledWith(
+      student.id,
+      schoolId,
+      'Parent@123',
+    );
     expect(result).toEqual({
       accessToken: 'signed-access-token',
       student,
     });
+    expect(jwtService.signAsync).toHaveBeenLastCalledWith(
+      { studentId: student.id, authVersion: 2 },
+      { secret: 'parent-access-secret', expiresIn: '30d' },
+    );
   });
 
-  it('does not issue access when the identifier belongs to another student', async () => {
+  it('does not issue access from a valid lookup token without a matching password', async () => {
     const { service, studentsService, jwtService } = setup();
     const payload = await issueLookupPayload(
       service,
@@ -169,14 +149,13 @@ describe('ParentAuthService name lookup', () => {
       jwtService,
     );
     jwtService.verifyAsync.mockResolvedValue(payload);
-    studentsService.findByIdentifierCode.mockResolvedValue([
-      { ...student, id: '00000000-0000-4000-8000-000000000099' },
-    ]);
+    studentsService.findById.mockResolvedValue(student);
+    studentsService.validateParentPassword.mockResolvedValue(false);
 
     await expect(
       service.verifyLookup({
         lookupToken: 'signed-lookup-token',
-        identifierCode: 'another-identifier',
+        password: 'WrongPassword',
       }),
     ).rejects.toMatchObject<AppException>({
       errorCode: ErrorCode.PARENT_VERIFICATION_FAILED,
@@ -190,7 +169,7 @@ describe('ParentAuthService name lookup', () => {
     await expect(
       service.verifyLookup({
         lookupToken: 'expired-token',
-        identifierCode: student.identifierCode!,
+        password: 'Parent@123',
       }),
     ).rejects.toMatchObject<AppException>({
       errorCode: ErrorCode.PARENT_VERIFICATION_FAILED,
