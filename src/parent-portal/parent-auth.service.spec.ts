@@ -77,7 +77,7 @@ describe('ParentAuthService name lookup', () => {
     });
 
     expect(studentsService.searchByFullName).toHaveBeenCalledWith(
-      '  Nguyễn   Văn An  ',
+      'Nguyễn Văn An',
       schoolId,
     );
     expect(result).toEqual([
@@ -101,6 +101,15 @@ describe('ParentAuthService name lookup', () => {
     const signedPayload = jwtService.signAsync.mock.calls[0][0];
     expect(signedPayload).not.toHaveProperty('candidateId');
     expect(signedPayload.candidateProof).toEqual(expect.any(String));
+  });
+
+  it('returns no results without querying students for fewer than three characters', async () => {
+    const { service, studentsService } = setup();
+
+    await expect(
+      service.searchByFullName({ schoolId, query: 'An' }),
+    ).resolves.toEqual([]);
+    expect(studentsService.searchByFullName).not.toHaveBeenCalled();
   });
 
   it('issues a real parent token only after the identifier matches the candidate', async () => {

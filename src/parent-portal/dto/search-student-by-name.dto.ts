@@ -22,9 +22,9 @@ export class SearchStudentByNameDto {
 
   @ApiPropertyOptional({
     description:
-      'Tên hoặc một phần họ tên của học sinh (không phân biệt hoa thường). Tối thiểu 3 ký tự.',
+      'Tên hoặc một phần họ tên của học sinh (không phân biệt hoa thường). Truy vấn dưới 3 ký tự trả danh sách rỗng.',
     example: 'Nguyễn Văn An',
-    minLength: 3,
+    minLength: 1,
     maxLength: 255,
   })
   @ValidateIf((dto: SearchStudentByNameDto) =>
@@ -33,7 +33,7 @@ export class SearchStudentByNameDto {
     ),
   )
   @IsString()
-  @MinLength(3)
+  @MinLength(1)
   @MaxLength(255)
   fullName?: string;
 
@@ -43,28 +43,28 @@ export class SearchStudentByNameDto {
   @ApiHideProperty()
   @IsOptional()
   @IsString()
-  @MinLength(3)
+  @MinLength(1)
   @MaxLength(255)
   query?: string;
 
   @ApiHideProperty()
   @IsOptional()
   @IsString()
-  @MinLength(3)
+  @MinLength(1)
   @MaxLength(255)
   search?: string;
 
   @ApiHideProperty()
   @IsOptional()
   @IsString()
-  @MinLength(3)
+  @MinLength(1)
   @MaxLength(255)
   name?: string;
 
   @ApiHideProperty()
   @IsOptional()
   @IsString()
-  @MinLength(3)
+  @MinLength(1)
   @MaxLength(255)
   keyword?: string;
 }

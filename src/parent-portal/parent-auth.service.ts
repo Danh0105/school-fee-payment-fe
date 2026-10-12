@@ -76,8 +76,11 @@ export class ParentAuthService {
     if (!fullName) {
       throw AppException.badRequest(ErrorCode.VALIDATION_ERROR);
     }
+    const normalizedName = fullName.trim().replace(/\s+/g, ' ');
+    if (normalizedName.length < 3) return [];
+
     const students = await this.studentsService.searchByFullName(
-      fullName,
+      normalizedName,
       dto.schoolId,
     );
 

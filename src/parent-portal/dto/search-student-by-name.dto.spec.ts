@@ -17,13 +17,12 @@ describe('SearchStudentByNameDto', () => {
     },
   );
 
-  it('rejects a query shorter than three characters', async () => {
+  it('accepts a short debounced query so the service can return no results', async () => {
     const dto = plainToInstance(SearchStudentByNameDto, {
       schoolId,
       query: 'An',
     });
 
-    const errors = await validate(dto);
-    expect(errors.some((error) => error.property === 'query')).toBe(true);
+    await expect(validate(dto)).resolves.toHaveLength(0);
   });
 });
