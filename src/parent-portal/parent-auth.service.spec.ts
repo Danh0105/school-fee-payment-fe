@@ -45,7 +45,6 @@ describe('ParentAuthService phone login', () => {
 
     await expect(
       service.login({
-        schoolId,
         username: '+84 901 234 567',
         password: '15082015',
       }),
@@ -55,7 +54,6 @@ describe('ParentAuthService phone login', () => {
     });
 
     expect(studentsService.findByParentCredentials).toHaveBeenCalledWith(
-      schoolId,
       '84901234567',
       '2015-08-15',
     );
@@ -70,7 +68,6 @@ describe('ParentAuthService phone login', () => {
 
     await expect(
       service.login({
-        schoolId,
         username: '0901234567',
         password: '31022015',
       }),
@@ -89,7 +86,6 @@ describe('ParentAuthService phone login', () => {
 
     await expect(
       service.login({
-        schoolId,
         username: '0901234567',
         password: '15082015',
       }),
@@ -102,7 +98,6 @@ describe('ParentAuthService phone login', () => {
     const { service, studentsService } = setup();
     studentsService.findByParentCredentials.mockResolvedValue([]);
     const dto = {
-      schoolId,
       username: '0901234567',
       password: '15082015',
     };

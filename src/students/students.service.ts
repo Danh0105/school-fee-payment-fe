@@ -179,7 +179,6 @@ export class StudentsService {
   }
 
   async findByParentCredentials(
-    schoolId: string,
     parentPhone: string,
     dateOfBirth: string,
   ): Promise<Student[]> {
@@ -187,7 +186,6 @@ export class StudentsService {
     return this.repo
       .createQueryBuilder('student')
       .where('student.deletedAt IS NULL')
-      .andWhere('student.schoolId = :schoolId', { schoolId })
       .andWhere('student.dateOfBirth = :dateOfBirth', { dateOfBirth })
       .andWhere(
         `RIGHT(regexp_replace(COALESCE(student.parentPhone, ''), '\\D', '', 'g'), 9) = :phoneSuffix`,

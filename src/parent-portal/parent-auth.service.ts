@@ -30,14 +30,13 @@ export class ParentAuthService {
   async login(dto: ParentLoginDto): Promise<ParentAccessResult> {
     const normalizedPhone = dto.username.replace(/\D/g, '');
     const attemptKey = createHash('sha256')
-      .update(`${dto.schoolId}:${normalizedPhone.slice(-9)}`)
+      .update(normalizedPhone.slice(-9))
       .digest('base64url');
     this.assertVerificationAttemptsAvailable(attemptKey);
 
     const dateOfBirth = this.passwordToDateOfBirth(dto.password);
     const matches = dateOfBirth
       ? await this.studentsService.findByParentCredentials(
-          dto.schoolId,
           normalizedPhone,
           dateOfBirth,
         )

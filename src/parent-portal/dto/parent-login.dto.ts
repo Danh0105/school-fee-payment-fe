@@ -1,11 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import { IsString, Matches, MaxLength } from 'class-validator';
 
 export class ParentLoginDto {
-  @ApiProperty({ description: 'Trường mà học sinh đang theo học.' })
-  @IsUUID()
-  schoolId: string;
-
   @ApiProperty({ description: 'Số điện thoại phụ huynh dùng làm tài khoản.' })
   @IsString()
   @MaxLength(20)

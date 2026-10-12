@@ -36,7 +36,6 @@ describe('StudentsService generated code', () => {
   });
 
   it('matches parent accounts by phone suffix and student birth date', async () => {
-    const schoolId = '00000000-0000-4000-8000-000000000001';
     const getMany = jest.fn(() => Promise.resolve([]));
     const queryBuilder = {
       where: jest.fn(),
@@ -54,11 +53,7 @@ describe('StudentsService generated code', () => {
       {} as SequenceService,
     );
 
-    await service.findByParentCredentials(
-      schoolId,
-      '+84 901 234 567',
-      '2015-08-15',
-    );
+    await service.findByParentCredentials('+84 901 234 567', '2015-08-15');
 
     expect(createQueryBuilder).toHaveBeenCalledWith('student');
     expect(queryBuilder.andWhere).toHaveBeenCalledWith(
