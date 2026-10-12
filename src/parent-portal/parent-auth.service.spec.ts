@@ -1,6 +1,5 @@
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { createHmac } from 'node:crypto';
 import { ErrorCode } from '../common/constants/error-codes';
 import { AppException } from '../common/exceptions/app.exception';
 import { Student } from '../students/entities/student.entity';
@@ -31,6 +30,7 @@ describe('ParentAuthService name lookup', () => {
     const studentsService = {
       searchByFullName: jest.fn(),
       findByIdentifierCode: jest.fn(),
+      findById: jest.fn(),
     };
     const jwtService = {
       signAsync: jest.fn((payload: Record<string, unknown>) =>
@@ -54,17 +54,14 @@ describe('ParentAuthService name lookup', () => {
     return { service, studentsService, jwtService };
   }
 
-  function lookupPayload(candidate: Student) {
-    return {
-      purpose: 'parent-student-lookup',
-      candidateProof: createHmac(
-        'sha256',
-        configValues['parentLookupJwt.secret'],
-      )
-        .update(`${candidate.schoolId}:${candidate.id}`)
-        .digest('base64url'),
-      schoolId: candidate.schoolId,
-    };
+  async function issueLookupPayload(
+    service: ParentAuthService,
+    studentsService: ReturnType<typeof setup>['studentsService'],
+    jwtService: ReturnType<typeof setup>['jwtService'],
+  ) {
+    studentsService.searchByFullName.mockResolvedValue([student]);
+    await service.searchByFullName({ schoolId, fullName: student.fullName });
+    return jwtService.signAsync.mock.calls[0][0];
   }
 
   it('returns only masked hints and a short-lived lookup token', async () => {
@@ -100,6 +97,7 @@ describe('ParentAuthService name lookup', () => {
     );
     const signedPayload = jwtService.signAsync.mock.calls[0][0];
     expect(signedPayload).not.toHaveProperty('candidateId');
+    expect(signedPayload.candidateRef).toEqual(expect.any(String));
     expect(signedPayload.candidateProof).toEqual(expect.any(String));
   });
 
@@ -114,7 +112,12 @@ describe('ParentAuthService name lookup', () => {
 
   it('issues a real parent token only after the identifier matches the candidate', async () => {
     const { service, studentsService, jwtService } = setup();
-    jwtService.verifyAsync.mockResolvedValue(lookupPayload(student));
+    const payload = await issueLookupPayload(
+      service,
+      studentsService,
+      jwtService,
+    );
+    jwtService.verifyAsync.mockResolvedValue(payload);
     studentsService.findByIdentifierCode.mockResolvedValue([student]);
 
     const result = await service.verifyLookup({
@@ -136,9 +139,36 @@ describe('ParentAuthService name lookup', () => {
     );
   });
 
+  it('issues access from a valid lookup token without requiring an identifier', async () => {
+    const { service, studentsService, jwtService } = setup();
+    const payload = await issueLookupPayload(
+      service,
+      studentsService,
+      jwtService,
+    );
+    jwtService.verifyAsync.mockResolvedValue(payload);
+    studentsService.findById.mockResolvedValue(student);
+
+    const result = await service.verifyLookup({
+      lookupToken: 'signed-lookup-token',
+    });
+
+    expect(studentsService.findByIdentifierCode).not.toHaveBeenCalled();
+    expect(studentsService.findById).toHaveBeenCalledWith(student.id);
+    expect(result).toEqual({
+      accessToken: 'signed-access-token',
+      student,
+    });
+  });
+
   it('does not issue access when the identifier belongs to another student', async () => {
     const { service, studentsService, jwtService } = setup();
-    jwtService.verifyAsync.mockResolvedValue(lookupPayload(student));
+    const payload = await issueLookupPayload(
+      service,
+      studentsService,
+      jwtService,
+    );
+    jwtService.verifyAsync.mockResolvedValue(payload);
     studentsService.findByIdentifierCode.mockResolvedValue([
       { ...student, id: '00000000-0000-4000-8000-000000000099' },
     ]);

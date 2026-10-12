@@ -1,7 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { StudentsService } from '../students/students.service';
 import { StudentAccessDto } from './dto/student-access.dto';
 import { ParentJwtPayload } from './interfaces/parent-jwt-payload.interface';
@@ -96,13 +103,29 @@ export class ParentAuthService {
 
   async verifyLookup(dto: VerifyStudentAccessDto): Promise<ParentAccessResult> {
     const payload = await this.verifyLookupToken(dto.lookupToken);
-    const matches = await this.studentsService.findByIdentifierCode(
-      dto.identifierCode.trim(),
-      payload.schoolId,
-    );
-    const student = matches.length === 1 ? matches[0] : undefined;
+    const studentId = this.decryptCandidateRef(payload.candidateRef);
+    let student: Student | undefined;
 
-    if (!student || !this.matchesCandidateProof(student, payload)) {
+    if (dto.identifierCode) {
+      const matches = await this.studentsService.findByIdentifierCode(
+        dto.identifierCode.trim(),
+        payload.schoolId,
+      );
+      student = matches.length === 1 ? matches[0] : undefined;
+      if (student?.id !== studentId) student = undefined;
+    } else {
+      try {
+        student = await this.studentsService.findById(studentId);
+      } catch {
+        student = undefined;
+      }
+    }
+
+    if (
+      !student ||
+      student.schoolId !== payload.schoolId ||
+      !this.matchesCandidateProof(student, payload)
+    ) {
       throw AppException.unauthorized(ErrorCode.PARENT_VERIFICATION_FAILED);
     }
 
@@ -112,6 +135,7 @@ export class ParentAuthService {
   private async issueLookupToken(student: Student): Promise<string> {
     const payload: ParentLookupJwtPayload = {
       purpose: 'parent-student-lookup',
+      candidateRef: this.encryptCandidateRef(student.id),
       candidateProof: this.createCandidateProof(student.id, student.schoolId),
       schoolId: student.schoolId,
     };
@@ -137,6 +161,7 @@ export class ParentAuthService {
       );
       if (
         payload.purpose !== 'parent-student-lookup' ||
+        !payload.candidateRef ||
         !payload.candidateProof ||
         !payload.schoolId
       ) {
@@ -193,6 +218,52 @@ export class ParentAuthService {
     )
       .update(`${schoolId}:${studentId}`)
       .digest('base64url');
+  }
+
+  private lookupEncryptionKey(): Buffer {
+    return createHash('sha256')
+      .update(this.config.get<string>('parentLookupJwt.secret') ?? '')
+      .digest();
+  }
+
+  private encryptCandidateRef(studentId: string): string {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv(
+      'aes-256-gcm',
+      this.lookupEncryptionKey(),
+      iv,
+    );
+    const encrypted = Buffer.concat([
+      cipher.update(studentId, 'utf8'),
+      cipher.final(),
+    ]);
+    return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString(
+      'base64url',
+    );
+  }
+
+  private decryptCandidateRef(candidateRef: string): string {
+    try {
+      const value = Buffer.from(candidateRef, 'base64url');
+      const iv = value.subarray(0, 12);
+      const authTag = value.subarray(12, 28);
+      const encrypted = value.subarray(28);
+      if (iv.length !== 12 || authTag.length !== 16 || !encrypted.length) {
+        throw new Error('Invalid encrypted candidate reference');
+      }
+      const decipher = createDecipheriv(
+        'aes-256-gcm',
+        this.lookupEncryptionKey(),
+        iv,
+      );
+      decipher.setAuthTag(authTag);
+      return Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final(),
+      ]).toString('utf8');
+    } catch {
+      throw AppException.unauthorized(ErrorCode.PARENT_VERIFICATION_FAILED);
+    }
   }
 
   private matchesCandidateProof(
