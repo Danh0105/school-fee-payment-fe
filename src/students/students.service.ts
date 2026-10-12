@@ -198,6 +198,31 @@ export class StudentsService {
     });
   }
 
+  /**
+   * Privacy-preserving lookup used by the public parent flow. Matching is
+   * exact after trimming/collapsing whitespace and is case-insensitive; a
+   * public caller cannot use a short fragment to enumerate the student list.
+   */
+  async findByExactFullName(
+    fullName: string,
+    schoolId: string,
+    limit = 20,
+  ): Promise<Student[]> {
+    const normalizedName = fullName.trim().replace(/\s+/g, ' ');
+
+    return this.repo
+      .createQueryBuilder('student')
+      .where('student.deletedAt IS NULL')
+      .andWhere('student.schoolId = :schoolId', { schoolId })
+      .andWhere(
+        `LOWER(regexp_replace(TRIM(student.fullName), '\\s+', ' ', 'g')) = LOWER(:fullName)`,
+        { fullName: normalizedName },
+      )
+      .orderBy('student.createdAt', 'ASC')
+      .take(limit)
+      .getMany();
+  }
+
   async update(id: string, dto: UpdateStudentDto): Promise<Student> {
     const student = await this.findById(id);
     const identifierCode = dto.identifierCode?.trim() || undefined;

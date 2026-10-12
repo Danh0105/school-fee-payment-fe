@@ -1,16 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { StudentsService } from '../students/students.service';
 import { StudentAccessDto } from './dto/student-access.dto';
 import { ParentJwtPayload } from './interfaces/parent-jwt-payload.interface';
 import { Student } from '../students/entities/student.entity';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { SearchStudentByNameDto } from './dto/search-student-by-name.dto';
+import { VerifyStudentAccessDto } from './dto/verify-student-access.dto';
+import { ParentLookupJwtPayload } from './interfaces/parent-lookup-jwt-payload.interface';
 
 export interface ParentAccessResult {
   accessToken: string;
   student: Student;
+}
+
+export interface ParentStudentLookupResult {
+  lookupToken: string;
+  displayName: string;
+  dateOfBirthHint: string | null;
+  parentPhoneHint: string | null;
 }
 
 @Injectable()
@@ -49,7 +60,89 @@ export class ParentAuthService {
       throw AppException.notFound(ErrorCode.STUDENT_IDENTIFIER_NOT_FOUND);
     }
 
-    const student = matches[0];
+    return this.issueAccessToken(matches[0]);
+  }
+
+  /**
+   * Searches only by an exact normalized name and returns masked hints. The
+   * opaque lookup token is short-lived and signed with a different secret
+   * from the real parent access token, so it cannot authorize portal APIs.
+   */
+  async searchByFullName(
+    dto: SearchStudentByNameDto,
+  ): Promise<ParentStudentLookupResult[]> {
+    const students = await this.studentsService.findByExactFullName(
+      dto.fullName,
+      dto.schoolId,
+    );
+
+    return Promise.all(
+      students.map(async (student) => ({
+        lookupToken: await this.issueLookupToken(student),
+        displayName: this.maskName(student.fullName),
+        dateOfBirthHint: this.maskDateOfBirth(student.dateOfBirth),
+        parentPhoneHint: this.maskPhone(student.parentPhone ?? student.phone),
+      })),
+    );
+  }
+
+  async verifyLookup(dto: VerifyStudentAccessDto): Promise<ParentAccessResult> {
+    const payload = await this.verifyLookupToken(dto.lookupToken);
+    const matches = await this.studentsService.findByIdentifierCode(
+      dto.identifierCode.trim(),
+      payload.schoolId,
+    );
+    const student = matches.length === 1 ? matches[0] : undefined;
+
+    if (!student || !this.matchesCandidateProof(student, payload)) {
+      throw AppException.unauthorized(ErrorCode.PARENT_VERIFICATION_FAILED);
+    }
+
+    return this.issueAccessToken(student);
+  }
+
+  private async issueLookupToken(student: Student): Promise<string> {
+    const payload: ParentLookupJwtPayload = {
+      purpose: 'parent-student-lookup',
+      candidateProof: this.createCandidateProof(student.id, student.schoolId),
+      schoolId: student.schoolId,
+    };
+
+    return this.jwtService.signAsync(
+      payload as unknown as Record<string, unknown>,
+      {
+        secret: this.config.get<string>('parentLookupJwt.secret'),
+        expiresIn: this.config.get<string>(
+          'parentLookupJwt.expiresIn',
+        ) as JwtSignOptions['expiresIn'],
+      },
+    );
+  }
+
+  private async verifyLookupToken(
+    lookupToken: string,
+  ): Promise<ParentLookupJwtPayload> {
+    try {
+      const payload = await this.jwtService.verifyAsync<ParentLookupJwtPayload>(
+        lookupToken,
+        { secret: this.config.get<string>('parentLookupJwt.secret') },
+      );
+      if (
+        payload.purpose !== 'parent-student-lookup' ||
+        !payload.candidateProof ||
+        !payload.schoolId
+      ) {
+        throw new Error('Invalid parent lookup token purpose');
+      }
+      return payload;
+    } catch {
+      throw AppException.unauthorized(ErrorCode.PARENT_VERIFICATION_FAILED);
+    }
+  }
+
+  private async issueAccessToken(
+    student: Student,
+  ): Promise<ParentAccessResult> {
     const payload: ParentJwtPayload = { studentId: student.id };
     const accessToken = await this.jwtService.signAsync(
       payload as unknown as Record<string, unknown>,
@@ -62,5 +155,48 @@ export class ParentAuthService {
     );
 
     return { accessToken, student };
+  }
+
+  private maskName(fullName: string): string {
+    return fullName
+      .trim()
+      .split(/\s+/)
+      .map((part) => `${part[0]}${'*'.repeat(Math.max(0, part.length - 1))}`)
+      .join(' ');
+  }
+
+  private maskDateOfBirth(dateOfBirth: string | null): string | null {
+    const year = dateOfBirth?.match(/^(\d{4})/)?.[1];
+    return year ? `**/**/${year}` : null;
+  }
+
+  private maskPhone(phone: string | null): string | null {
+    if (!phone) return null;
+    const digits = phone.replace(/\D/g, '');
+    if (!digits) return null;
+    const visibleLength = Math.min(3, digits.length);
+    return `${'*'.repeat(digits.length - visibleLength)}${digits.slice(-visibleLength)}`;
+  }
+
+  private createCandidateProof(studentId: string, schoolId: string): string {
+    return createHmac(
+      'sha256',
+      this.config.get<string>('parentLookupJwt.secret') ?? '',
+    )
+      .update(`${schoolId}:${studentId}`)
+      .digest('base64url');
+  }
+
+  private matchesCandidateProof(
+    student: Student,
+    payload: ParentLookupJwtPayload,
+  ): boolean {
+    const expected = Buffer.from(
+      this.createCandidateProof(student.id, payload.schoolId),
+    );
+    const actual = Buffer.from(payload.candidateProof);
+    return (
+      expected.length === actual.length && timingSafeEqual(expected, actual)
+    );
   }
 }

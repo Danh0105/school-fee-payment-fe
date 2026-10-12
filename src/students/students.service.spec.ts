@@ -34,4 +34,39 @@ describe('StudentsService generated code', () => {
     expect(first.studentCode).not.toBe(second.studentCode);
     expect(next).toHaveBeenCalledTimes(2);
   });
+
+  it('uses an exact normalized name for the public parent lookup', async () => {
+    const schoolId = '00000000-0000-4000-8000-000000000001';
+    const getMany = jest.fn(() => Promise.resolve([]));
+    const queryBuilder = {
+      where: jest.fn(),
+      andWhere: jest.fn(),
+      orderBy: jest.fn(),
+      take: jest.fn(),
+      getMany,
+    };
+    for (const method of ['where', 'andWhere', 'orderBy', 'take'] as const) {
+      queryBuilder[method].mockReturnValue(queryBuilder);
+    }
+    const createQueryBuilder = jest.fn(() => queryBuilder);
+    const service = new StudentsService(
+      { createQueryBuilder } as unknown as Repository<Student>,
+      {} as SchoolsService,
+      {} as SequenceService,
+    );
+
+    await service.findByExactFullName('  Nguyễn   Văn An  ', schoolId);
+
+    expect(createQueryBuilder).toHaveBeenCalledWith('student');
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('= LOWER(:fullName)'),
+      { fullName: 'Nguyễn Văn An' },
+    );
+    expect(queryBuilder.andWhere).not.toHaveBeenCalledWith(
+      expect.stringContaining('ILIKE'),
+      expect.anything(),
+    );
+    expect(queryBuilder.take).toHaveBeenCalledWith(20);
+    expect(getMany).toHaveBeenCalled();
+  });
 });

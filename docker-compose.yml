@@ -54,6 +54,10 @@ services:
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
       PARENT_JWT_SECRET: ${PARENT_JWT_SECRET:-change-me-parent}
       PARENT_JWT_EXPIRES_IN: ${PARENT_JWT_EXPIRES_IN:-30d}
+      # If omitted, the app derives an isolated lookup key from
+      # PARENT_JWT_SECRET; never falls back to a public production secret.
+      PARENT_LOOKUP_JWT_SECRET: ${PARENT_LOOKUP_JWT_SECRET:-}
+      PARENT_LOOKUP_JWT_EXPIRES_IN: ${PARENT_LOOKUP_JWT_EXPIRES_IN:-10m}
       PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-VIETQR}
       BANK_CODE: ${BANK_CODE:-}
       BANK_ACCOUNT_NUMBER: ${BANK_ACCOUNT_NUMBER:-}

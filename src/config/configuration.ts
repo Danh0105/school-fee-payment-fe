@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 export default () => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parseInt(process.env.PORT ?? '3010', 10),
@@ -24,6 +26,18 @@ export default () => ({
   parentJwt: {
     secret: process.env.PARENT_JWT_SECRET ?? 'change-me-parent',
     expiresIn: process.env.PARENT_JWT_EXPIRES_IN ?? '30d',
+  },
+
+  // A lookup token is only a short-lived, opaque reference to one masked
+  // search result. Its separate secret prevents it from being accepted by
+  // the parent JWT strategy before the identifierCode check succeeds.
+  parentLookupJwt: {
+    secret:
+      process.env.PARENT_LOOKUP_JWT_SECRET ||
+      createHmac('sha256', process.env.PARENT_JWT_SECRET ?? 'change-me-parent')
+        .update('parent-student-lookup')
+        .digest('hex'),
+    expiresIn: process.env.PARENT_LOOKUP_JWT_EXPIRES_IN ?? '10m',
   },
 
   payment: {
@@ -77,8 +91,7 @@ export default () => ({
 
   viettelSinvoice: {
     enabled: process.env.VIETTEL_SINVOICE_ENABLED === 'true',
-    autoIssue:
-      (process.env.VIETTEL_SINVOICE_AUTO_ISSUE ?? 'true') === 'true',
+    autoIssue: (process.env.VIETTEL_SINVOICE_AUTO_ISSUE ?? 'true') === 'true',
     baseUrl:
       process.env.VIETTEL_SINVOICE_BASE_URL ??
       'https://api-vinvoice.viettel.vn/services/einvoiceapplication/api/',
