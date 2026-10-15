@@ -31,6 +31,12 @@ function parseVietinbankTime(value: string): Date {
   );
 }
 
+/** First standalone 12-digit run: an order's transferContent (yyMMdd + seq). */
+function orderCodeIn(remark: unknown): string | null {
+  const text = typeof remark === 'string' ? remark : '';
+  return /(?<!\d)\d{12}(?!\d)/.exec(text)?.[0] ?? null;
+}
+
 /**
  * Adapter for VietinBank's own eBank Biz collection API (virtual-account QR
  * + inq-bill/notify-bill callbacks), as opposed to VietQrProvider which
@@ -61,7 +67,11 @@ export class ViettinbankProvider implements PaymentProvider {
     input: CreateQrInput,
   ): Promise<CreateQrResult & { raw: Record<string, unknown> }> {
     const account = this.config.get<string>('viettinbank.account') ?? '';
-    const accountNumber = `${account}${input.transferContent}`;
+    // VIETINBANK_ACCOUNT_ONLY: the QR carries the bare VAC; the order code
+    // then travels only in the transfer content (purposeOfTrans).
+    const accountNumber = this.config.get<boolean>('viettinbank.accountOnly')
+      ? account
+      : `${account}${input.transferContent}`;
     const raw = await this.api.generateQr({
       accountNumber,
       amount: input.amount.toNumber(),
@@ -133,9 +143,13 @@ export class ViettinbankProvider implements PaymentProvider {
         ? toSafeString(payload.recvAcctId)
         : null,
       amount: new Decimal(amountRaw as string | number),
-      transferContent: payload.custCode
-        ? this.stripVac(toSafeString(payload.custCode).trim())
-        : null,
+      transferContent:
+        (payload.custCode
+          ? this.stripVac(toSafeString(payload.custCode).trim())
+          : '') ||
+        // A bare-VAC account (VIETINBANK_ACCOUNT_ONLY) has no order code in
+        // custCode: take it from the transfer content instead.
+        orderCodeIn(payload.remark),
       transactionTime: payload.transTime
         ? parseVietinbankTime(toSafeString(payload.transTime))
         : new Date(),
