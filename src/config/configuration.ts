@@ -62,6 +62,7 @@ export default () => ({
     privateKeyPath: process.env.VIETINBANK_PRIVATE_KEY_PATH ?? '',
     publicKeyPath: process.env.VIETINBANK_PUBLIC_KEY_PATH ?? '',
     notifyCertPath: process.env.VIETINBANK_NOTIFY_CERT_PATH ?? '',
+    clientIp: process.env.VIETINBANK_CLIENT_IP ?? '',
   },
 
   cors: {

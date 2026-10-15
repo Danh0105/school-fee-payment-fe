@@ -51,6 +51,7 @@ export class ViettinbankApiService {
       'viettinbank.privateKeyPath',
     );
     const publicKeyPath = this.config.get<string>('viettinbank.publicKeyPath');
+    const clientIp = this.config.get<string>('viettinbank.clientIp');
     if (!baseUrl || !clientId || !clientSecret || !privateKeyPath) {
       throw new Error('VietinBank is not configured');
     }
@@ -64,6 +65,9 @@ export class ViettinbankApiService {
       channel: 'WEB',
       version: '1.0.1',
       language: 'vi',
+      // Same as the reference VietinBank integration on this server: the
+      // public IP the request comes from (VIETINBANK_CLIENT_IP).
+      ...(clientIp ? { clientIP: clientIp } : {}),
       clientDt,
       data: input,
       signature: '',
