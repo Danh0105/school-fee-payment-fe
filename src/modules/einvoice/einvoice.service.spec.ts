@@ -15,7 +15,7 @@ import { EInvoiceService } from './einvoice.service';
 import { EInvoice } from './entities/einvoice.entity';
 import { EInvoiceConfig } from './entities/einvoice-config.entity';
 import { EInvoiceEvent } from './entities/einvoice-event.entity';
-import { EInvoiceStatus } from './entities/einvoice.enums';
+import { EInvoiceIssueMode, EInvoiceStatus } from './entities/einvoice.enums';
 
 describe('EInvoiceService idempotency', () => {
   it('hai lần prepare cùng payment luôn trả bản ghi và transactionUuid cũ', async () => {
@@ -451,6 +451,7 @@ describe('EInvoiceService danh sách', () => {
 describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
   function build(options: {
     autoIssue?: boolean;
+    issueMode?: EInvoiceIssueMode;
     orderEmail?: string | null;
     invoices?: Partial<EInvoice>[];
   }) {
@@ -467,6 +468,7 @@ describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
           findOne: jest.fn().mockResolvedValue({
             enabled: true,
             autoIssue: true,
+            issueMode: options.issueMode ?? EInvoiceIssueMode.ISSUE,
             provider: 'VIETTEL',
             supplierTaxCode: '0101',
             templateCode: 'T',
@@ -553,6 +555,30 @@ describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
     expect(queryBuilder.values).toHaveBeenCalledWith(
       expect.objectContaining({ buyerEmail: null }),
     );
+  });
+
+  it('gạch nợ ở chế độ nháp vẫn tạo hóa đơn khi công tắc hệ thống AUTO_ISSUE tắt', async () => {
+    const { service, queryBuilder, manager } = build({
+      autoIssue: false,
+      issueMode: EInvoiceIssueMode.DRAFT,
+    });
+
+    const invoice = await service.prepareForReceipt(input, manager as never);
+
+    expect(invoice?.status).toBe(EInvoiceStatus.PENDING);
+    expect(queryBuilder.values).toHaveBeenCalledTimes(1);
+  });
+
+  it('AUTO_ISSUE tắt chặn tự phát hành thật (chế độ phát hành ngay)', async () => {
+    const { service, queryBuilder, manager } = build({
+      autoIssue: false,
+      issueMode: EInvoiceIssueMode.ISSUE,
+    });
+
+    await expect(
+      service.prepareForReceipt(input, manager as never),
+    ).resolves.toBeNull();
+    expect(queryBuilder.values).not.toHaveBeenCalled();
   });
 
   const order = (

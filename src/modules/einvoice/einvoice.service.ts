@@ -93,11 +93,15 @@ export class EInvoiceService {
     manager: EntityManager,
   ): Promise<EInvoice | null> {
     const global = getViettelSinvoiceConfig(this.configService);
-    if (!global.enabled || !global.autoIssue) return null;
+    if (!global.enabled) return null;
     const config = await manager
       .getRepository(EInvoiceConfig)
       .findOne({ where: { schoolId: input.schoolId } });
     if (!config?.enabled || !config.autoIssue) return null;
+    // The system-wide AUTO_ISSUE switch only guards real issuance: a draft
+    // is not a tax document until the accountant signs it on the portal.
+    if (config.issueMode !== EInvoiceIssueMode.DRAFT && !global.autoIssue)
+      return null;
 
     await this.insertPending(input, config, manager);
     const invoice = await manager.getRepository(EInvoice).findOneOrFail({
