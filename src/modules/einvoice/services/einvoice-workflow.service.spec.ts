@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
 import { ConfigService } from '@nestjs/config';
 import { EInvoiceWorkflowService } from './einvoice-workflow.service';
-import { EInvoiceStatus } from '../entities/einvoice.enums';
+import { EInvoiceIssueMode, EInvoiceStatus } from '../entities/einvoice.enums';
 import { ViettelSinvoiceException } from '../providers/viettel/exceptions/viettel-sinvoice.exception';
 
 describe('EInvoiceWorkflowService', () => {
@@ -12,6 +12,7 @@ describe('EInvoiceWorkflowService', () => {
   let reconcileQueue: { add: jest.Mock };
   let downloadQueue: { add: jest.Mock };
   let mapper: { fromReceipt: jest.Mock };
+  let config: Record<string, unknown>;
   let service: EInvoiceWorkflowService;
 
   beforeEach(() => {
@@ -34,8 +35,10 @@ describe('EInvoiceWorkflowService', () => {
       findOneOrFail: jest.fn().mockImplementation(async () => invoice),
       save: jest.fn().mockImplementation(async (value) => value),
     };
+    config = {};
     provider = {
       issueInvoice: jest.fn(),
+      createOrUpdateInvoiceDraft: jest.fn(),
       getInvoiceByTransactionUuid: jest.fn(),
       getInvoiceFile: jest.fn(),
       sendInvoiceEmail: jest.fn(),
@@ -64,7 +67,9 @@ describe('EInvoiceWorkflowService', () => {
     };
     service = new EInvoiceWorkflowService(
       invoices as never,
-      { findOneByOrFail: jest.fn().mockResolvedValue({}) } as never,
+      {
+        findOneByOrFail: jest.fn().mockImplementation(async () => config),
+      } as never,
       attempts as never,
       { count: jest.fn(), upsert: jest.fn() } as never,
       { create: jest.fn(), save: jest.fn() } as never,
@@ -212,5 +217,120 @@ describe('EInvoiceWorkflowService', () => {
     invoices.update.mockResolvedValue({ affected: 0 });
     await service.issue('invoice-id');
     expect(provider.issueInvoice).not.toHaveBeenCalled();
+  });
+
+  it('gửi hóa đơn tới email phụ huynh đăng ký trên đơn (ưu tiên hơn email hồ sơ học sinh) và ghi emailSentAt', async () => {
+    Object.assign(invoice, {
+      status: EInvoiceStatus.COMPLETED,
+      invoiceNo: 'C26TIS12',
+      buyerEmail: 'dangky@example.com',
+    });
+    provider.sendInvoiceEmail.mockResolvedValue({});
+    await service.sendEmail('invoice-id');
+    expect(provider.sendInvoiceEmail).toHaveBeenCalledWith({
+      supplierTaxCode: '0101',
+      transactionUuid: uuid,
+      buyerEmail: 'dangky@example.com',
+    });
+    const [where, changes] = invoices.update.mock.calls.at(-1) as [
+      unknown,
+      { emailSentAt: unknown },
+    ];
+    expect(where).toEqual({ id: 'invoice-id' });
+    expect(changes.emailSentAt).toBeInstanceOf(Date);
+  });
+
+  it('chưa phát hành (chưa có số) thì không gửi email', async () => {
+    invoice.buyerEmail = 'dangky@example.com';
+    await service.sendEmail('invoice-id');
+    expect(provider.sendInvoiceEmail).not.toHaveBeenCalled();
+  });
+
+  describe('chế độ nháp (7.8)', () => {
+    const notFound = () =>
+      new ViettelSinvoiceException(
+        'VALIDATION_ERROR',
+        null,
+        'NOT_FOUND',
+        'not found',
+        'searchInvoiceByTransactionUuid',
+        uuid,
+        false,
+      );
+
+    beforeEach(() => {
+      config.issueMode = EInvoiceIssueMode.DRAFT;
+    });
+
+    it('tạo nháp bằng 7.8, không gọi 7.2, không chờ số, không tải file', async () => {
+      provider.createOrUpdateInvoiceDraft.mockResolvedValue({
+        invoiceNo: '',
+        transactionID: 'tx-draft',
+      });
+      await service.issue('invoice-id');
+      expect(provider.createOrUpdateInvoiceDraft).toHaveBeenCalledWith(
+        expect.objectContaining({
+          generalInvoiceInfo: { transactionUuid: uuid },
+        }),
+        '0101',
+      );
+      expect(provider.issueInvoice).not.toHaveBeenCalled();
+      expect(invoice).toMatchObject({
+        status: EInvoiceStatus.DRAFT,
+        transactionId: 'tx-draft',
+        invoiceNo: null,
+      });
+      expect(reconcileQueue.add).not.toHaveBeenCalled();
+      expect(downloadQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('timeout khi tạo nháp: lần thử lại thấy nháp trên Viettel thì không gửi 7.8 lần nữa', async () => {
+      provider.createOrUpdateInvoiceDraft.mockRejectedValueOnce(timeout());
+      await expect(service.issue('invoice-id')).rejects.toMatchObject({
+        kind: 'TIMEOUT',
+      });
+      expect(invoice.status).toBe(EInvoiceStatus.QUEUED);
+      provider.getInvoiceByTransactionUuid.mockResolvedValue({
+        invoiceNo: '',
+        transactionID: 'tx-draft',
+      });
+      await service.issue('invoice-id');
+      expect(provider.createOrUpdateInvoiceDraft).toHaveBeenCalledTimes(1);
+      expect(invoice.status).toBe(EInvoiceStatus.DRAFT);
+    });
+
+    it('đồng bộ khi kế toán chưa ký: vẫn là nháp, không lên lịch tra tiếp', async () => {
+      invoice.status = EInvoiceStatus.DRAFT;
+      provider.getInvoiceByTransactionUuid.mockRejectedValue(notFound());
+      await service.reconcile('invoice-id');
+      expect(invoice.status).toBe(EInvoiceStatus.DRAFT);
+      expect(reconcileQueue.add).not.toHaveBeenCalled();
+      expect(downloadQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('đồng bộ sau khi kế toán ký trên cổng: lấy số, chuyển ISSUED và tải PDF/ZIP', async () => {
+      invoice.status = EInvoiceStatus.DRAFT;
+      provider.getInvoiceByTransactionUuid.mockResolvedValue({
+        invoiceNo: 'C26TIS0000001',
+        transactionID: 'tx-draft',
+        reservationCode: 'RC1',
+      });
+      await service.reconcile('invoice-id');
+      expect(invoice).toMatchObject({
+        status: EInvoiceStatus.ISSUED,
+        invoiceNo: 'C26TIS0000001',
+        reservationCode: 'RC1',
+      });
+      expect(downloadQueue.add).toHaveBeenCalledTimes(2);
+    });
+
+    it('đồng bộ lỗi mạng: giữ nháp và để BullMQ thử lại', async () => {
+      invoice.status = EInvoiceStatus.DRAFT;
+      provider.getInvoiceByTransactionUuid.mockRejectedValue(timeout());
+      await expect(service.reconcile('invoice-id')).rejects.toMatchObject({
+        kind: 'TIMEOUT',
+      });
+      expect(invoice.status).toBe(EInvoiceStatus.DRAFT);
+    });
   });
 });

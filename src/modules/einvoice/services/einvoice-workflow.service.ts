@@ -16,6 +16,7 @@ import { EInvoiceFile } from '../entities/einvoice-file.entity';
 import {
   EInvoiceAttemptOperation,
   EInvoiceAttemptStatus,
+  EInvoiceIssueMode,
   EInvoiceStatus,
 } from '../entities/einvoice.enums';
 import { EInvoiceConfig } from '../entities/einvoice-config.entity';
@@ -29,6 +30,10 @@ import {
 } from '../providers/viettel/viettel-sinvoice.constants';
 import { getViettelSinvoiceConfig } from '../providers/viettel/viettel-sinvoice.config';
 import { ViettelTransactionSearchResult } from '../providers/viettel/responses/viettel.responses';
+
+/** The email the parent registered on the order wins over the student record's. */
+const recipientOf = (invoice: EInvoice): string | null =>
+  invoice.buyerEmail ?? invoice.student.parentEmail ?? null;
 
 /** Statuses in which downloaded files still move the invoice forward. */
 const FILE_STAGE = [EInvoiceStatus.ISSUED, EInvoiceStatus.FILE_PENDING];
@@ -82,6 +87,11 @@ export class EInvoiceWorkflowService {
     );
     const started = Date.now();
     try {
+      const config = await this.configs.findOneByOrFail({
+        schoolId: invoice.schoolId,
+      });
+      const asDraft = config.issueMode === EInvoiceIssueMode.DRAFT;
+      if (asDraft) attempt.endpoint = VIETTEL_ENDPOINTS.draft.path;
       const existing = resend ? await this.findAtProvider(invoice) : null;
       if (existing) {
         await this.events.save(
@@ -94,13 +104,11 @@ export class EInvoiceWorkflowService {
             },
           }),
         );
-        await this.applyIssueResult(invoice, existing);
+        if (asDraft) await this.applyDraftResult(invoice, existing);
+        else await this.applyIssueResult(invoice, existing);
         await this.completeAttempt(attempt, started);
         return;
       }
-      const config = await this.configs.findOneByOrFail({
-        schoolId: invoice.schoolId,
-      });
       const payload = this.mapper.fromReceipt(
         invoice,
         invoice.receipt,
@@ -111,15 +119,27 @@ export class EInvoiceWorkflowService {
         string,
         unknown
       >;
-      const result = await this.provider.issueInvoice(
-        payload,
-        invoice.supplierTaxCode,
-      );
-      invoice.rawResponse = JSON.parse(JSON.stringify(result)) as Record<
-        string,
-        unknown
-      >;
-      await this.applyIssueResult(invoice, result);
+      if (asDraft) {
+        const result = await this.provider.createOrUpdateInvoiceDraft(
+          payload,
+          invoice.supplierTaxCode,
+        );
+        invoice.rawResponse = JSON.parse(JSON.stringify(result)) as Record<
+          string,
+          unknown
+        >;
+        await this.applyDraftResult(invoice, result);
+      } else {
+        const result = await this.provider.issueInvoice(
+          payload,
+          invoice.supplierTaxCode,
+        );
+        invoice.rawResponse = JSON.parse(JSON.stringify(result)) as Record<
+          string,
+          unknown
+        >;
+        await this.applyIssueResult(invoice, result);
+      }
       await this.completeAttempt(attempt, started);
     } catch (error) {
       await this.fail(invoice, attempt, error, started);
@@ -128,6 +148,7 @@ export class EInvoiceWorkflowService {
 
   async reconcile(invoiceId: string): Promise<void> {
     const invoice = await this.loadInvoice(invoiceId);
+    if (invoice.status === EInvoiceStatus.DRAFT) return this.syncDraft(invoice);
     if (
       invoice.invoiceNo ||
       invoice.status !== EInvoiceStatus.WAITING_INVOICE_NUMBER
@@ -227,7 +248,7 @@ export class EInvoiceWorkflowService {
           },
         );
       }
-      if (inFileStage && fileType === 'PDF' && invoice.student.parentEmail) {
+      if (inFileStage && fileType === 'PDF' && recipientOf(invoice)) {
         await this.emailQueue.add(
           E_INVOICE_JOBS.SEND_EMAIL,
           { invoiceId },
@@ -246,7 +267,7 @@ export class EInvoiceWorkflowService {
 
   async sendEmail(invoiceId: string): Promise<void> {
     const invoice = await this.loadInvoice(invoiceId);
-    const email = invoice.student.parentEmail;
+    const email = recipientOf(invoice);
     if (
       !email ||
       !invoice.invoiceNo ||
@@ -272,6 +293,48 @@ export class EInvoiceWorkflowService {
           payload: { recipient: email.replace(/(^.).*(@.*$)/, '$1***$2') },
         }),
       );
+      await this.invoices.update(
+        { id: invoiceId },
+        { emailSentAt: new Date() },
+      );
+      await this.completeAttempt(attempt, started);
+    } catch (error) {
+      await this.fail(invoice, attempt, error, started);
+    }
+  }
+
+  /**
+   * One 7.21 lookup per sync: a draft waits for the accountant, possibly for
+   * days, so not being signed yet is a normal answer and nothing is rescheduled.
+   */
+  private async syncDraft(invoice: EInvoice): Promise<void> {
+    const attempt = await this.startAttempt(
+      invoice,
+      EInvoiceAttemptOperation.RECONCILE,
+      VIETTEL_ENDPOINTS.byTransactionUuid.path,
+    );
+    const started = Date.now();
+    try {
+      const found = await this.findAtProvider(invoice);
+      invoice.errorCode = null;
+      invoice.errorDescription = null;
+      if (found?.invoiceNo) {
+        invoice.invoiceNo = found.invoiceNo;
+        invoice.reservationCode =
+          found.reservationCode ?? invoice.reservationCode;
+        invoice.transactionId = found.transactionID || invoice.transactionId;
+        invoice.codeOfTax = found.codeOfTax ?? invoice.codeOfTax;
+        await this.events.save(
+          this.events.create({
+            invoiceId: invoice.id,
+            eventType: 'DRAFT_SIGNED_AT_PROVIDER',
+            payload: { invoiceNo: found.invoiceNo },
+          }),
+        );
+        await this.markIssuedAndQueueFiles(invoice);
+      } else {
+        await this.invoices.save(invoice);
+      }
       await this.completeAttempt(attempt, started);
     } catch (error) {
       await this.fail(invoice, attempt, error, started);
@@ -290,7 +353,9 @@ export class EInvoiceWorkflowService {
         invoice.supplierTaxCode,
         invoice.transactionUuid,
       );
-      return found.invoiceNo || found.transactionID ? found : null;
+      return found.invoiceNo || found.transactionID || found.exists
+        ? found
+        : null;
     } catch (error) {
       // Viettel answers an unknown transactionUuid with a business error;
       // anything retryable must not fall through to a fresh 7.2.
@@ -320,6 +385,39 @@ export class EInvoiceWorkflowService {
     invoice.status = EInvoiceStatus.WAITING_INVOICE_NUMBER;
     await this.invoices.save(invoice);
     await this.scheduleReconcile(invoice.id, invoice.reconciliationAttempts);
+  }
+
+  private async applyDraftResult(
+    invoice: EInvoice,
+    result: Partial<
+      Pick<
+        ViettelTransactionSearchResult,
+        'invoiceNo' | 'transactionID' | 'reservationCode' | 'codeOfTax'
+      >
+    >,
+  ): Promise<void> {
+    // Already signed on the portal (a retry found it): follow the issued path.
+    if (result.invoiceNo) {
+      await this.applyIssueResult(invoice, {
+        invoiceNo: result.invoiceNo,
+        transactionID: result.transactionID ?? '',
+        reservationCode: result.reservationCode,
+        codeOfTax: result.codeOfTax,
+      });
+      return;
+    }
+    invoice.transactionId = result.transactionID || invoice.transactionId;
+    invoice.errorCode = null;
+    invoice.errorDescription = null;
+    invoice.status = EInvoiceStatus.DRAFT;
+    await this.invoices.save(invoice);
+    await this.events.save(
+      this.events.create({
+        invoiceId: invoice.id,
+        eventType: 'DRAFT_CREATED',
+        payload: { transactionID: invoice.transactionId },
+      }),
+    );
   }
 
   private async scheduleReconcile(
@@ -424,7 +522,10 @@ export class EInvoiceWorkflowService {
       invoice.status = mapped.retryable
         ? EInvoiceStatus.QUEUED
         : EInvoiceStatus.FAILED;
-    } else if (attempt.operation === EInvoiceAttemptOperation.RECONCILE) {
+    } else if (
+      attempt.operation === EInvoiceAttemptOperation.RECONCILE &&
+      invoice.status !== EInvoiceStatus.DRAFT
+    ) {
       invoice.status = mapped.retryable
         ? EInvoiceStatus.WAITING_INVOICE_NUMBER
         : EInvoiceStatus.FAILED;

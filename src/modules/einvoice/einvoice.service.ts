@@ -15,8 +15,14 @@ import { Queue } from 'bullmq';
 import JSZip from 'jszip';
 import { EntityManager, In, Not, Repository } from 'typeorm';
 import { PaginatedResult } from '../../common/dto/paginated-result.dto';
-import { ReceiptStatus } from '../../common/enums/status.enum';
+import {
+  PaymentOrderStatus,
+  ReceiptStatus,
+  ReconciliationStatus,
+} from '../../common/enums/status.enum';
+import { PaymentOrder } from '../../payment-orders/entities/payment-order.entity';
 import { Receipt } from '../../receipts/entities/receipt.entity';
+import { BankReconciliation } from '../../reconciliation/entities/bank-reconciliation.entity';
 import { EInvoiceConfig } from './entities/einvoice-config.entity';
 import { EInvoice } from './entities/einvoice.entity';
 import { EInvoiceEvent } from './entities/einvoice-event.entity';
@@ -25,8 +31,10 @@ import { EInvoiceAttempt } from './entities/einvoice-attempt.entity';
 import {
   EInvoiceAttemptOperation,
   EInvoiceAttemptStatus,
+  EInvoiceIssueMode,
   EInvoiceStatus,
 } from './entities/einvoice.enums';
+import { ParentEInvoiceSummaryDto } from './dto/parent-einvoice-summary.dto';
 import { QueryEInvoiceDto } from './dto/query-einvoice.dto';
 import { UpsertEInvoiceConfigDto } from './dto/upsert-einvoice-config.dto';
 import { E_INVOICE_PROVIDER } from './providers/einvoice-provider.interface';
@@ -36,13 +44,21 @@ import {
   E_INVOICE_JOBS,
   E_INVOICE_QUEUES,
 } from './providers/viettel/viettel-sinvoice.constants';
+import { ViettelSinvoiceException } from './providers/viettel/exceptions/viettel-sinvoice.exception';
 
 interface PendingInvoiceInput {
   schoolId: string;
   paymentId: string;
   receiptId: string;
   studentId: string;
+  /** Order the payment was matched to; its invoiceEmail becomes buyerEmail. */
+  paymentOrderId: string | null;
 }
+
+const AWAITING_PAYMENT = [
+  PaymentOrderStatus.PENDING,
+  PaymentOrderStatus.PARTIALLY_PAID,
+];
 
 const SORT_COLUMNS = new Map([
   ['createdAt', 'i.createdAt'],
@@ -138,11 +154,22 @@ export class EInvoiceService {
       if (!config?.enabled) {
         throw new BadRequestException('Trường chưa bật hóa đơn điện tử');
       }
+      const match = await manager.getRepository(BankReconciliation).findOne({
+        where: {
+          paymentTransactionId: receipt.paymentTransactionId,
+          status: In([
+            ReconciliationStatus.AUTO_MATCHED,
+            ReconciliationStatus.MANUAL_MATCHED,
+          ]),
+        },
+        order: { createdAt: 'DESC' },
+      });
       const input = {
         schoolId: receipt.schoolId,
         paymentId: receipt.paymentTransactionId,
         receiptId,
         studentId: receipt.studentId,
+        paymentOrderId: match?.paymentOrderId ?? null,
       };
       await this.insertPending(input, config, manager);
       // The insert is skipped when the payment already has another active invoice.
@@ -155,7 +182,11 @@ export class EInvoiceService {
       await manager.getRepository(EInvoiceEvent).insert({
         invoiceId: created.id,
         eventType: 'INVOICE_PREPARED',
-        payload: { ...input, manual: true },
+        payload: {
+          ...input,
+          paymentOrderId: input.paymentOrderId ?? undefined,
+          manual: true,
+        },
       });
       return created;
     });
@@ -168,6 +199,12 @@ export class EInvoiceService {
     config: EInvoiceConfig,
     manager: EntityManager,
   ): Promise<void> {
+    const order = input.paymentOrderId
+      ? await manager.getRepository(PaymentOrder).findOne({
+          where: { id: input.paymentOrderId },
+          select: { id: true, invoiceEmail: true },
+        })
+      : null;
     await manager
       .getRepository(EInvoice)
       .createQueryBuilder()
@@ -178,6 +215,8 @@ export class EInvoiceService {
         paymentId: input.paymentId,
         receiptId: input.receiptId,
         studentId: input.studentId,
+        paymentOrderId: input.paymentOrderId,
+        buyerEmail: order?.invoiceEmail ?? null,
         supplierTaxCode: config.supplierTaxCode,
         templateCode: config.templateCode,
         invoiceSeries: config.invoiceSeries,
@@ -187,6 +226,46 @@ export class EInvoiceService {
       })
       .orIgnore()
       .execute();
+  }
+
+  /**
+   * The e-invoice a parent asked for on an order, or null when they did not.
+   * No invoice exists before a payment is matched, so until then the state is
+   * the order's: awaiting payment, or cancelled once it can no longer be paid.
+   */
+  async summaryForPaymentOrder(
+    order: Pick<PaymentOrder, 'id' | 'status' | 'invoiceEmail'>,
+  ): Promise<ParentEInvoiceSummaryDto | null> {
+    if (!order.invoiceEmail) return null;
+    const invoices = await this.invoices.find({
+      where: { paymentOrderId: order.id },
+      order: { createdAt: 'DESC' },
+    });
+    const awaitingPayment = AWAITING_PAYMENT.includes(order.status);
+    const invoice =
+      invoices.find((i) => i.status !== EInvoiceStatus.CANCELLED) ??
+      // A legally cancelled invoice of a paid order is still its invoice.
+      (order.status === PaymentOrderStatus.PAID ? invoices[0] : undefined);
+    if (invoice) {
+      return {
+        status: invoice.status,
+        buyerEmail: invoice.buyerEmail ?? order.invoiceEmail,
+        invoiceNo: invoice.invoiceNo,
+        issuedAt: invoice.issuedAt,
+        emailSentAt: invoice.emailSentAt,
+      };
+    }
+    return {
+      status: awaitingPayment
+        ? 'PENDING_PAYMENT'
+        : order.status === PaymentOrderStatus.PAID
+          ? EInvoiceStatus.PENDING
+          : EInvoiceStatus.CANCELLED,
+      buyerEmail: order.invoiceEmail,
+      invoiceNo: null,
+      issuedAt: null,
+      emailSentAt: null,
+    };
   }
 
   getProviderStatus(): {
@@ -256,6 +335,9 @@ export class EInvoiceService {
         `Giao dịch đã xuất hóa đơn điện tử số ${invoice.invoiceNo}; hãy hủy hóa đơn trước khi hủy khớp`,
       );
     }
+    if (invoice.status === EInvoiceStatus.DRAFT) {
+      return this.voidDraft(invoice, reason, manager);
+    }
     if (await this.mayExistAtProvider(invoice, manager)) {
       throw new BadRequestException(
         'Hóa đơn điện tử của giao dịch đã gửi sang Viettel nhưng chưa có số; hãy đồng bộ rồi hủy hóa đơn trước khi hủy khớp',
@@ -281,6 +363,54 @@ export class EInvoiceService {
       invoiceId: invoice.id,
       eventType: 'INVOICE_VOIDED',
       payload: { reason },
+    });
+  }
+
+  /**
+   * A draft is not a tax document, so it can be voided here, but only after
+   * 7.21 confirms the accountant has not signed it on the portal meanwhile.
+   * Viettel has no API to delete a draft: it stays on the portal for the
+   * accountant to delete by hand.
+   */
+  private async voidDraft(
+    invoice: EInvoice,
+    reason: string,
+    manager: EntityManager,
+  ): Promise<void> {
+    let signedNo: string | null = null;
+    try {
+      const found = await this.provider.getInvoiceByTransactionUuid(
+        invoice.supplierTaxCode,
+        invoice.transactionUuid,
+      );
+      signedNo = found.invoiceNo || null;
+    } catch (error) {
+      if (!(error instanceof ViettelSinvoiceException) || error.retryable) {
+        throw new BadRequestException(
+          'Không kiểm tra được hóa đơn nháp trên Viettel; vui lòng thử lại sau',
+        );
+      }
+    }
+    if (signedNo) {
+      throw new BadRequestException(
+        `Hóa đơn nháp đã được ký trên Viettel với số ${signedNo}; hãy bấm Đồng bộ rồi hủy hóa đơn trước khi hủy khớp`,
+      );
+    }
+    const voided = await manager
+      .getRepository(EInvoice)
+      .update(
+        { id: invoice.id, status: EInvoiceStatus.DRAFT },
+        { status: EInvoiceStatus.CANCELLED },
+      );
+    if (!voided.affected) {
+      throw new BadRequestException(
+        'Hóa đơn điện tử của giao dịch vừa thay đổi trạng thái; vui lòng thử lại',
+      );
+    }
+    await manager.getRepository(EInvoiceEvent).insert({
+      invoiceId: invoice.id,
+      eventType: 'DRAFT_VOIDED',
+      payload: { reason, providerDraftLeft: true },
     });
   }
 
@@ -439,8 +569,11 @@ export class EInvoiceService {
   async sync(id: string): Promise<void> {
     const invoice = await this.invoices.findOneByOrFail({ id });
     if (invoice.invoiceNo) return;
-    invoice.status = EInvoiceStatus.WAITING_INVOICE_NUMBER;
-    await this.invoices.save(invoice);
+    // A draft stays a draft until 7.21 shows the accountant signed it.
+    if (invoice.status !== EInvoiceStatus.DRAFT) {
+      invoice.status = EInvoiceStatus.WAITING_INVOICE_NUMBER;
+      await this.invoices.save(invoice);
+    }
     await this.reconcileQueue.add(
       E_INVOICE_JOBS.RECONCILE,
       { invoiceId: id },
@@ -535,6 +668,8 @@ export class EInvoiceService {
       provider: 'VIETTEL',
       enabled: dto.enabled,
       autoIssue: dto.autoIssue ?? true,
+      // A client that does not know the field keeps the school's mode.
+      issueMode: dto.issueMode ?? current?.issueMode ?? EInvoiceIssueMode.DRAFT,
       supplierTaxCode: dto.supplierTaxCode,
       templateCode: dto.templateCode,
       invoiceSeries: dto.invoiceSeries,

@@ -22,6 +22,9 @@ import {
 import { ViettelSinvoiceException } from './exceptions/viettel-sinvoice.exception';
 import { PaymentMethod } from '../../../../common/enums/status.enum';
 
+/** Viettel buyerIdType for a citizen ID / personal identification number. */
+const BUYER_ID_TYPE_CITIZEN_ID = '1';
+
 /**
  * "Hình thức thanh toán" printed on the invoice must match how the parent
  * actually paid. Only CK keeps the numeric code the integration was built
@@ -122,12 +125,18 @@ export class ViettelSinvoiceMapper {
       cusGetInvoiceRight: true,
       transactionUuid: invoice.transactionUuid,
     });
+    // The invoice is made out to the student: name, personal identification
+    // number (printed in the "Căn cước công dân" box) and address.
     const buyerInfo = Object.assign(new BuyerInfoDto(), {
-      buyerName: student.parentName ?? student.fullName,
+      buyerName: student.fullName,
       buyerCode: student.studentCode,
       buyerAddressLine: student.address ?? undefined,
+      buyerIdType: student.identifierCode
+        ? BUYER_ID_TYPE_CITIZEN_ID
+        : undefined,
+      buyerIdNo: student.identifierCode ?? undefined,
       buyerPhoneNumber: student.parentPhone ?? student.phone ?? undefined,
-      buyerEmail: student.parentEmail ?? undefined,
+      buyerEmail: invoice.buyerEmail ?? student.parentEmail ?? undefined,
       buyerNotGetInvoice: 0,
     });
     const sellerInfo = Object.assign(new SellerInfoDto(), {});

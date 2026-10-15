@@ -9,6 +9,7 @@ import { ParentAuthController } from './parent-auth.controller';
 import { ParentPortalController } from './parent-portal.controller';
 import { ParentAuthService } from './parent-auth.service';
 import { ParentJwtStrategy } from './strategies/parent-jwt.strategy';
+import { EInvoiceModule } from '../modules/einvoice/einvoice.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ParentJwtStrategy } from './strategies/parent-jwt.strategy';
     ReceivablesModule,
     PaymentOrdersModule,
     SchoolsModule,
+    EInvoiceModule,
   ],
   controllers: [ParentAuthController, ParentPortalController],
   providers: [ParentAuthService, ParentJwtStrategy],

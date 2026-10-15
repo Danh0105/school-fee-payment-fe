@@ -154,6 +154,7 @@ export class PaymentTransactionsService {
               paymentId: transaction.id,
               receiptId: allocation.receiptId,
               studentId: order.studentId,
+              paymentOrderId: order.id,
             },
             manager,
           );

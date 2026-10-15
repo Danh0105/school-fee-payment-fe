@@ -43,6 +43,16 @@ import {
 } from './responses/viettel.responses';
 import { ViettelSinvoiceException } from './exceptions/viettel-sinvoice.exception';
 
+/**
+ * A signed invoice's number is its series followed by the sequence
+ * ("K26TXM2813"). An unsigned 7.8 draft comes back from 7.21 with the bare
+ * series ("C21TIS"), which must not be mistaken for a number.
+ */
+export function numberedInvoiceNo(invoiceNo?: string | null): string {
+  const value = invoiceNo?.trim() ?? '';
+  return /\d$/.test(value) ? value : '';
+}
+
 @Injectable()
 export class ViettelSinvoiceService implements EInvoiceProvider {
   constructor(
@@ -85,11 +95,12 @@ export class ViettelSinvoiceService implements EInvoiceProvider {
       { supplierTaxCode: taxCode },
       payload.generalInvoiceInfo.transactionUuid,
     );
-    return this.unwrapOrSelf(
+    const result = this.unwrapOrSelf(
       envelope,
       VIETTEL_ENDPOINTS.issue.path,
       payload.generalInvoiceInfo.transactionUuid,
     );
+    return { ...result, invoiceNo: numberedInvoiceNo(result.invoiceNo) };
   }
 
   async getInvoiceRepresentationFile(
@@ -137,13 +148,24 @@ export class ViettelSinvoiceService implements EInvoiceProvider {
     });
   }
 
-  createOrUpdateInvoiceDraft(
+  /** 7.8: the draft has no number; the accountant signs it on the portal. */
+  async createOrUpdateInvoiceDraft(
     payload: ViettelInvoicePayloadDto,
     taxCode: string,
-  ): Promise<unknown> {
-    return this.request(VIETTEL_ENDPOINTS.draft, payload, {
-      supplierTaxCode: taxCode,
-    });
+  ): Promise<Partial<ViettelIssueResult>> {
+    const response = await this.request<
+      ViettelEnvelope<Partial<ViettelIssueResult>> & Partial<ViettelIssueResult>
+    >(
+      VIETTEL_ENDPOINTS.draft,
+      payload,
+      { supplierTaxCode: taxCode },
+      payload.generalInvoiceInfo.transactionUuid,
+    );
+    return this.unwrapOrSelf(
+      response,
+      VIETTEL_ENDPOINTS.draft.path,
+      payload.generalInvoiceInfo.transactionUuid,
+    );
   }
 
   async cancelInvoice(dto: CancelInvoiceDto): Promise<unknown> {
@@ -515,8 +537,13 @@ export class ViettelSinvoiceService implements EInvoiceProvider {
       );
     }
     const result = response.result ?? response.data ?? response;
-    if (Array.isArray(result)) return result[0] ?? { invoiceNo: '' };
-    return result;
+    const record = Array.isArray(result) ? result[0] : result;
+    if (!record) return { invoiceNo: '' };
+    return {
+      ...record,
+      invoiceNo: numberedInvoiceNo(record.invoiceNo),
+      exists: true,
+    };
   }
 
   private getBusinessErrorCode(

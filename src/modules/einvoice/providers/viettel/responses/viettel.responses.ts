@@ -30,4 +30,6 @@ export interface ViettelTransactionSearchResult {
   exchangeDes?: string | null;
   codeOfTax?: string | null;
   transactionID?: string | null;
+  /** Set by the provider: Viettel holds a record for the uuid, numbered or not. */
+  exists?: boolean;
 }

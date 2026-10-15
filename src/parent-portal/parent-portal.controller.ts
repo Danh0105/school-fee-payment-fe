@@ -7,7 +7,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiExtraModels,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
@@ -18,6 +23,11 @@ import { StudentsService } from '../students/students.service';
 import { ReceivablesService } from '../receivables/receivables.service';
 import { PaymentOrdersService } from '../payment-orders/payment-orders.service';
 import { CreateParentPaymentOrderDto } from './dto/create-parent-payment-order.dto';
+import { EInvoiceService } from '../modules/einvoice/einvoice.service';
+import { ParentEInvoiceSummaryDto } from '../modules/einvoice/dto/parent-einvoice-summary.dto';
+import { PaymentOrder } from '../payment-orders/entities/payment-order.entity';
+
+const RECEIVABLE_EXAMPLE = '7d4f0c1e-3b8a-4f5e-9c2d-1a6b8e9f0a12';
 
 // @Public() skips the global staff JwtAuthGuard ('jwt' strategy); the
 // controller-level ParentJwtAuthGuard below is what actually authenticates
@@ -26,6 +36,7 @@ import { CreateParentPaymentOrderDto } from './dto/create-parent-payment-order.d
 // there is no broader "parent account" to scope from.
 @ApiTags('Parent Portal')
 @ApiBearerAuth()
+@ApiExtraModels(ParentEInvoiceSummaryDto)
 @Public()
 @UseGuards(ParentJwtAuthGuard)
 @Controller('parent')
@@ -34,6 +45,7 @@ export class ParentPortalController {
     private readonly studentsService: StudentsService,
     private readonly receivablesService: ReceivablesService,
     private readonly paymentOrdersService: PaymentOrdersService,
+    private readonly einvoiceService: EInvoiceService,
   ) {}
 
   private assertOwnsOrder(parent: ParentAuthUser, orderStudentId: string) {
@@ -52,16 +64,52 @@ export class ParentPortalController {
     return this.receivablesService.findByStudent(parent.studentId);
   }
 
+  /** Adds `eInvoice` only when the parent asked for an invoice on the order. */
+  private async withEInvoice<T extends object>(
+    target: T,
+    order: Pick<PaymentOrder, 'id' | 'status' | 'invoiceEmail'>,
+  ): Promise<T & { eInvoice?: ParentEInvoiceSummaryDto }> {
+    const eInvoice = await this.einvoiceService.summaryForPaymentOrder(order);
+    return eInvoice ? Object.assign(target, { eInvoice }) : target;
+  }
+
   @Post('payment-orders')
+  @ApiBody({
+    type: CreateParentPaymentOrderDto,
+    examples: {
+      withoutInvoice: {
+        summary: 'Không yêu cầu hóa đơn điện tử',
+        value: {
+          items: [{ receivableId: RECEIVABLE_EXAMPLE }],
+          paymentMethod: 'VIETQR',
+        },
+      },
+      withInvoice: {
+        summary: 'Có yêu cầu xuất hóa đơn điện tử',
+        description:
+          'Hóa đơn được phát hành sau khi thanh toán được xác nhận và gửi tới invoice.email. Response có thêm eInvoice.',
+        value: {
+          items: [{ receivableId: RECEIVABLE_EXAMPLE }],
+          paymentMethod: 'VIETQR',
+          invoice: { email: 'phuhuynh@example.com' },
+        },
+      },
+    },
+  })
   async createPaymentOrder(
     @Body() dto: CreateParentPaymentOrderDto,
     @CurrentParent() parent: ParentAuthUser,
   ) {
-    return this.paymentOrdersService.create({
-      studentId: parent.studentId,
-      items: dto.items,
-      paymentMethod: dto.paymentMethod,
-    });
+    const order = await this.paymentOrdersService.create(
+      {
+        studentId: parent.studentId,
+        items: dto.items,
+        paymentMethod: dto.paymentMethod,
+      },
+      undefined,
+      { invoiceEmail: dto.invoice?.email ?? null },
+    );
+    return this.withEInvoice(order, order);
   }
 
   @Get('payment-orders/:id')
@@ -71,7 +119,7 @@ export class ParentPortalController {
   ) {
     const order = await this.paymentOrdersService.findById(id);
     this.assertOwnsOrder(parent, order.studentId);
-    return order;
+    return this.withEInvoice(order, order);
   }
 
   @Get('payment-orders/:id/qr')
@@ -81,6 +129,8 @@ export class ParentPortalController {
   ) {
     const order = await this.paymentOrdersService.findById(id);
     this.assertOwnsOrder(parent, order.studentId);
-    return this.paymentOrdersService.getQr(id);
+    const qr = await this.paymentOrdersService.getQr(id);
+    // getQr may just have expired the order.
+    return this.withEInvoice(qr, { ...order, status: qr.status });
   }
 }

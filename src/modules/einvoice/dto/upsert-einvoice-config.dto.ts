@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsEnum,
   IsIn,
   IsOptional,
   IsString,
@@ -7,10 +8,12 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+import { EInvoiceIssueMode } from '../entities/einvoice.enums';
 
 export class UpsertEInvoiceConfigDto {
   @IsBoolean() enabled: boolean;
   @IsOptional() @IsBoolean() autoIssue?: boolean;
+  @IsOptional() @IsEnum(EInvoiceIssueMode) issueMode?: EInvoiceIssueMode;
   @IsString() @MaxLength(20) supplierTaxCode: string;
   @IsString() @MaxLength(20) templateCode: string;
   @IsString() @MaxLength(25) invoiceSeries: string;

@@ -4,6 +4,7 @@ import { School } from '../../../schools/entities/school.entity';
 import { Student } from '../../../students/entities/student.entity';
 import { Receipt } from '../../../receipts/entities/receipt.entity';
 import { PaymentTransaction } from '../../../payment-transactions/entities/payment-transaction.entity';
+import { PaymentOrder } from '../../../payment-orders/entities/payment-order.entity';
 import { EInvoiceStatus } from './einvoice.enums';
 
 @Entity('einvoices')
@@ -39,6 +40,15 @@ export class EInvoice extends BaseEntity {
   @ManyToOne(() => Receipt, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'receipt_id' })
   receipt: Receipt;
+
+  /** Order the payment was matched to; carries the parent's invoice request. */
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  paymentOrderId: string | null;
+
+  @ManyToOne(() => PaymentOrder, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'payment_order_id' })
+  paymentOrder: PaymentOrder | null;
 
   @Index()
   @Column({ type: 'uuid' })
@@ -90,4 +100,10 @@ export class EInvoice extends BaseEntity {
   > | null;
   @Column({ type: 'integer', default: 0 }) reconciliationAttempts: number;
   @Column({ type: 'timestamptz', nullable: true }) issuedAt: Date | null;
+
+  /** Email the parent registered on the order; overrides student.parentEmail. */
+  @Column({ type: 'varchar', length: 255, nullable: true }) buyerEmail:
+    string | null;
+
+  @Column({ type: 'timestamptz', nullable: true }) emailSentAt: Date | null;
 }

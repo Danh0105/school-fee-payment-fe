@@ -38,6 +38,7 @@ export class PaymentOrdersService {
   async create(
     dto: CreatePaymentOrderDto,
     userId?: string,
+    options: { invoiceEmail?: string | null } = {},
   ): Promise<PaymentOrder> {
     const student = await this.studentsService.findById(dto.studentId);
     const school = await this.schoolsService.findById(student.schoolId);
@@ -161,6 +162,7 @@ export class PaymentOrdersService {
         qrUrl,
         expiresAt,
         createdBy: userId ?? null,
+        invoiceEmail: options.invoiceEmail ?? null,
       });
       const savedOrder = await orderRepo.save(order);
 

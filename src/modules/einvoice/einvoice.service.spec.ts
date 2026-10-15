@@ -3,8 +3,13 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { ConfigService } from '@nestjs/config';
 import JSZip from 'jszip';
-import { ReceiptStatus } from '../../common/enums/status.enum';
+import {
+  PaymentOrderStatus,
+  ReceiptStatus,
+} from '../../common/enums/status.enum';
+import { PaymentOrder } from '../../payment-orders/entities/payment-order.entity';
 import { Receipt } from '../../receipts/entities/receipt.entity';
+import { BankReconciliation } from '../../reconciliation/entities/bank-reconciliation.entity';
 import { QueryEInvoiceDto } from './dto/query-einvoice.dto';
 import { EInvoiceService } from './einvoice.service';
 import { EInvoice } from './entities/einvoice.entity';
@@ -68,6 +73,7 @@ describe('EInvoiceService idempotency', () => {
       paymentId: 'payment-id',
       receiptId: 'receipt-id',
       studentId: 'student-id',
+      paymentOrderId: null,
     };
 
     const first = await service.prepareForReceipt(input, manager as never);
@@ -158,6 +164,8 @@ describe('EInvoiceService xuất hóa đơn thủ công theo phiếu thu', () =>
     config?: Record<string, unknown> | null;
     insertSkipped?: boolean;
     globalEnabled?: boolean;
+    /** Email the parent registered on the order the payment is matched to. */
+    orderEmail?: string | null;
   }) {
     const queryBuilder = {
       insert: jest.fn().mockReturnThis(),
@@ -200,6 +208,21 @@ describe('EInvoiceService xuất hóa đơn thủ công theo phiếu thu', () =>
         },
       ],
       [EInvoiceEvent, eventRepo],
+      [
+        BankReconciliation,
+        {
+          findOne: jest.fn().mockResolvedValue({ paymentOrderId: 'order-id' }),
+        },
+      ],
+      [
+        PaymentOrder,
+        {
+          findOne: jest.fn().mockResolvedValue({
+            id: 'order-id',
+            invoiceEmail: options.orderEmail ?? null,
+          }),
+        },
+      ],
     ]);
     const txManager = {
       getRepository: jest.fn((entity: unknown) => repositories.get(entity)),
@@ -248,6 +271,8 @@ describe('EInvoiceService xuất hóa đơn thủ công theo phiếu thu', () =>
         paymentId: 'payment-id',
         receiptId: 'receipt-id',
         studentId: 'student-id',
+        paymentOrderId: 'order-id',
+        buyerEmail: null,
         status: EInvoiceStatus.PENDING,
       }),
     );
@@ -261,6 +286,21 @@ describe('EInvoiceService xuất hóa đơn thủ công theo phiếu thu', () =>
       { status: EInvoiceStatus.QUEUED },
     );
     expect(issueQueue.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('xuất thủ công phiếu thu của đơn phụ huynh đã đăng ký email → hóa đơn mang email đó', async () => {
+    const { service, queryBuilder } = build({
+      orderEmail: 'phuhuynh@example.com',
+    });
+
+    await service.issueForReceipt('receipt-id');
+
+    expect(queryBuilder.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentOrderId: 'order-id',
+        buyerEmail: 'phuhuynh@example.com',
+      }),
+    );
   });
 
   it.each([
@@ -405,5 +445,191 @@ describe('EInvoiceService danh sách', () => {
       ['i.createdAt', 'ASC'],
       ['i.createdAt', 'ASC'],
     ]);
+  });
+});
+
+describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
+  function build(options: {
+    autoIssue?: boolean;
+    orderEmail?: string | null;
+    invoices?: Partial<EInvoice>[];
+  }) {
+    const queryBuilder = {
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      orIgnore: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ identifiers: [] }),
+    };
+    const repositories = new Map<unknown, unknown>([
+      [
+        EInvoiceConfig,
+        {
+          findOne: jest.fn().mockResolvedValue({
+            enabled: true,
+            autoIssue: true,
+            provider: 'VIETTEL',
+            supplierTaxCode: '0101',
+            templateCode: 'T',
+            invoiceSeries: 'C26TAA',
+          }),
+        },
+      ],
+      [
+        EInvoice,
+        {
+          createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'invoice-id',
+            status: EInvoiceStatus.PENDING,
+          }),
+        },
+      ],
+      [EInvoiceEvent, { insert: jest.fn().mockResolvedValue({}) }],
+      [
+        PaymentOrder,
+        {
+          findOne: jest.fn().mockResolvedValue({
+            id: 'order-id',
+            invoiceEmail: options.orderEmail ?? null,
+          }),
+        },
+      ],
+    ]);
+    const manager = {
+      getRepository: jest.fn((entity: unknown) => repositories.get(entity)),
+    };
+    const invoices = {
+      find: jest.fn().mockResolvedValue(options.invoices ?? []),
+    };
+    const service = new EInvoiceService(
+      invoices as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new ConfigService({
+        viettelSinvoice: {
+          enabled: true,
+          autoIssue: options.autoIssue ?? true,
+        },
+      }),
+    );
+    return { service, queryBuilder, manager, invoices };
+  }
+
+  const input = {
+    schoolId: 'school-id',
+    paymentId: 'payment-id',
+    receiptId: 'receipt-id',
+    studentId: 'student-id',
+    paymentOrderId: 'order-id',
+  };
+
+  it('thanh toán được khớp: hóa đơn chép email đã đăng ký trên đơn', async () => {
+    const { service, queryBuilder, manager } = build({
+      orderEmail: 'phuhuynh@example.com',
+    });
+
+    await service.prepareForReceipt(input, manager as never);
+
+    expect(queryBuilder.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentOrderId: 'order-id',
+        buyerEmail: 'phuhuynh@example.com',
+        status: EInvoiceStatus.PENDING,
+      }),
+    );
+  });
+
+  it('đơn không đăng ký hóa đơn: buyerEmail để trống, không tự lấy dữ liệu khác', async () => {
+    const { service, queryBuilder, manager } = build({ orderEmail: null });
+
+    await service.prepareForReceipt(input, manager as never);
+
+    expect(queryBuilder.values).toHaveBeenCalledWith(
+      expect.objectContaining({ buyerEmail: null }),
+    );
+  });
+
+  const order = (
+    status: PaymentOrderStatus,
+    invoiceEmail: string | null = 'phuhuynh@example.com',
+  ) => ({ id: 'order-id', status, invoiceEmail });
+
+  it('đơn không đăng ký hóa đơn → không có eInvoice', async () => {
+    const { service, invoices } = build({});
+    await expect(
+      service.summaryForPaymentOrder(order(PaymentOrderStatus.PENDING, null)),
+    ).resolves.toBeNull();
+    expect(invoices.find).not.toHaveBeenCalled();
+  });
+
+  it('đơn chưa thanh toán → PENDING_PAYMENT, chưa có số, chưa gửi email', async () => {
+    const { service } = build({});
+    await expect(
+      service.summaryForPaymentOrder(order(PaymentOrderStatus.PENDING)),
+    ).resolves.toEqual({
+      status: 'PENDING_PAYMENT',
+      buyerEmail: 'phuhuynh@example.com',
+      invoiceNo: null,
+      issuedAt: null,
+      emailSentAt: null,
+    });
+  });
+
+  it.each([
+    PaymentOrderStatus.EXPIRED,
+    PaymentOrderStatus.CANCELLED,
+    PaymentOrderStatus.FAILED,
+  ])('đơn %s không có hóa đơn → CANCELLED', async (status) => {
+    const { service } = build({});
+    await expect(
+      service.summaryForPaymentOrder(order(status)),
+    ).resolves.toMatchObject({ status: EInvoiceStatus.CANCELLED });
+  });
+
+  it('đơn đã thanh toán nhưng chưa có hóa đơn → PENDING (chờ phát hành)', async () => {
+    const { service } = build({});
+    await expect(
+      service.summaryForPaymentOrder(order(PaymentOrderStatus.PAID)),
+    ).resolves.toMatchObject({ status: EInvoiceStatus.PENDING });
+  });
+
+  it('đã phát hành → trạng thái, số, ngày phát hành và ngày gửi email của hóa đơn', async () => {
+    const issuedAt = new Date('2026-10-15T03:00:00Z');
+    const emailSentAt = new Date('2026-10-15T03:01:00Z');
+    const { service } = build({
+      invoices: [
+        {
+          status: EInvoiceStatus.COMPLETED,
+          buyerEmail: 'phuhuynh@example.com',
+          invoiceNo: 'C26TIS12',
+          issuedAt,
+          emailSentAt,
+        },
+      ],
+    });
+    await expect(
+      service.summaryForPaymentOrder(order(PaymentOrderStatus.PAID)),
+    ).resolves.toEqual({
+      status: EInvoiceStatus.COMPLETED,
+      buyerEmail: 'phuhuynh@example.com',
+      invoiceNo: 'C26TIS12',
+      issuedAt,
+      emailSentAt,
+    });
+  });
+
+  it('hóa đơn bị hủy do hủy khớp, đơn quay lại chờ thanh toán → PENDING_PAYMENT', async () => {
+    const { service } = build({
+      invoices: [{ status: EInvoiceStatus.CANCELLED, invoiceNo: null }],
+    });
+    await expect(
+      service.summaryForPaymentOrder(order(PaymentOrderStatus.PENDING)),
+    ).resolves.toMatchObject({ status: 'PENDING_PAYMENT' });
   });
 });

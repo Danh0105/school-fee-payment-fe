@@ -34,6 +34,7 @@ import { EInvoiceFile } from '../src/modules/einvoice/entities/einvoice-file.ent
 import {
   EInvoiceAttemptOperation,
   EInvoiceAttemptStatus,
+  EInvoiceIssueMode,
   EInvoiceStatus,
 } from '../src/modules/einvoice/entities/einvoice.enums';
 import { E_INVOICE_QUEUES } from '../src/modules/einvoice/providers/viettel/viettel-sinvoice.constants';
@@ -43,11 +44,13 @@ import { AcademicYear } from '../src/academic-years/entities/academic-year.entit
 import { Class } from '../src/classes/entities/class.entity';
 import { FeeCategory } from '../src/fee-categories/entities/fee-category.entity';
 import { Student } from '../src/students/entities/student.entity';
+import { PaymentOrder } from '../src/payment-orders/entities/payment-order.entity';
 import { Role } from '../src/common/enums/role.enum';
 import {
   AcademicYearStatus,
   FeeAssignmentTargetType,
   FeePlanStatus,
+  PaymentOrderStatus,
 } from '../src/common/enums/status.enum';
 
 jest.setTimeout(90_000);
@@ -101,6 +104,8 @@ class ViettelSinvoiceMock {
     string,
     { invoiceNo: string; transactionID: string; ready: boolean }
   >();
+  /** 7.8 drafts waiting on the portal, by transactionUuid. */
+  readonly drafts = new Map<string, { transactionID: string }>();
   token = 'tok-1';
   logins = 0;
   /** 'sync': 7.2 returns invoiceNo; 'async': invoiceNo="" until 7.21 is called. */
@@ -156,6 +161,25 @@ class ViettelSinvoiceMock {
 
   callsTo(fragment: string): MockCall[] {
     return this.calls.filter((call) => call.path.includes(fragment));
+  }
+
+  draftCallsFor(uuid: string): MockCall[] {
+    return this.callsTo('/createOrUpdateInvoiceDraft/').filter(
+      (call) => issuePayload(call).generalInvoiceInfo.transactionUuid === uuid,
+    );
+  }
+
+  /** The accountant signs the draft on vinvoice.viettel.vn: it gets a number. */
+  signDraft(uuid: string): void {
+    const draft = this.drafts.get(uuid);
+    if (!draft) throw new Error(`No draft ${uuid}`);
+    this.drafts.delete(uuid);
+    this.seq += 1;
+    this.invoices.set(uuid, {
+      invoiceNo: `K26TAA${String(this.seq).padStart(7, '0')}`,
+      transactionID: draft.transactionID,
+      ready: true,
+    });
   }
 
   issueCallsFor(uuid: string): MockCall[] {
@@ -215,7 +239,36 @@ class ViettelSinvoiceMock {
       };
     }
 
+    if (path.startsWith('InvoiceAPI/InvoiceWS/createOrUpdateInvoiceDraft/')) {
+      const uuid = issuePayload(call).generalInvoiceInfo.transactionUuid;
+      if (!this.drafts.has(uuid)) {
+        this.drafts.set(uuid, {
+          transactionID: `DRF${randomUUID().slice(0, 8)}`,
+        });
+      }
+      // What Viettel production answered for a real 7.8 call: no number, no transactionID.
+      return { status: 200, body: {} };
+    }
+
     if (path === 'InvoiceAPI/InvoiceWS/searchInvoiceByTransactionUuid') {
+      // An unsigned draft is found, with the bare series as invoiceNo.
+      if (this.drafts.has(call.form?.transactionUuid ?? '')) {
+        return {
+          status: 200,
+          body: {
+            errorCode: null,
+            description: null,
+            result: [
+              {
+                supplierTaxCode: TAX_CODE,
+                invoiceNo: 'K26TAA',
+                reservationCode: null,
+                status: 'Hóa đơn gốc',
+              },
+            ],
+          },
+        };
+      }
       const invoice = this.invoices.get(call.form?.transactionUuid ?? '');
       if (!invoice) {
         return {
@@ -322,6 +375,7 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
     templateCode: '1/001',
     invoiceSeries: 'K26TAA',
     taxPercentage: '-2',
+    issueMode: EInvoiceIssueMode.ISSUE,
   };
 
   beforeAll(async () => {
@@ -481,16 +535,19 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
 
   async function createStudentWithReceivable(
     amount = '720000',
+    overrides: { parentPhone?: string; dateOfBirth?: string } = {},
   ): Promise<{ student: Student; receivableId: string }> {
     seq += 1;
     const schoolId = schoolA.id;
     const student = await studentsService.create({
       schoolId,
       fullName: `Học sinh HĐĐT ${runId}-${seq}`,
+      identifierCode: `0790${runId}${seq}`.slice(0, 20),
       parentName: `Phụ huynh ${seq}`,
       parentPhone: '0901234567',
       parentEmail: `parent${seq}@example.com`,
       address: '1 Trần Hưng Đạo, Hà Nội',
+      ...overrides,
     });
     await studentClassesService.assign({
       studentId: student.id,
@@ -576,8 +633,11 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
         transactionUuid: invoice.transactionUuid,
       });
       expect(payload.buyerInfo).toMatchObject({
-        buyerName: paid.student.parentName,
+        buyerName: paid.student.fullName,
         buyerCode: paid.student.studentCode,
+        buyerIdType: '1',
+        buyerIdNo: paid.student.identifierCode,
+        buyerAddressLine: '1 Trần Hưng Đạo, Hà Nội',
         buyerEmail: paid.student.parentEmail,
         buyerPhoneNumber: '0901234567',
       });
@@ -1243,5 +1303,404 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
     } finally {
       await einvoiceService.upsertConfig(schoolA.id, baseConfig);
     }
+  });
+
+  describe('chế độ nháp: thanh toán tạo nháp trên cổng Viettel (7.8)', () => {
+    beforeAll(async () => {
+      await einvoiceService.upsertConfig(schoolA.id, {
+        ...baseConfig,
+        issueMode: EInvoiceIssueMode.DRAFT,
+      });
+    });
+
+    afterAll(async () => {
+      await einvoiceService.upsertConfig(schoolA.id, baseConfig);
+    });
+
+    /** Waits for the one reconcile attempt a sync makes to finish. */
+    async function syncOnce(invoiceId: string): Promise<void> {
+      const before = await attempts.countBy({
+        invoiceId,
+        operation: EInvoiceAttemptOperation.RECONCILE,
+        status: EInvoiceAttemptStatus.SUCCEEDED,
+      });
+      await api()
+        .post(`/einvoices/${invoiceId}/sync`)
+        .set(auth(accountantToken))
+        .expect(201);
+      await waitFor('sync attempt', async () =>
+        (await attempts.countBy({
+          invoiceId,
+          operation: EInvoiceAttemptOperation.RECONCILE,
+          status: EInvoiceAttemptStatus.SUCCEEDED,
+        })) > before
+          ? true
+          : null,
+      );
+    }
+
+    it('thanh toán khớp → nháp 7.8 (không gọi 7.2) → chưa ký thì đồng bộ vẫn là nháp → ký trên cổng → đồng bộ lấy số, tải file, gửi email → COMPLETED', async () => {
+      const paid = await payNewReceivable();
+      const draft = await waitForStatus(paid.paymentId, EInvoiceStatus.DRAFT);
+      const uuid = draft.transactionUuid;
+      expect(draft.invoiceNo).toBeNull();
+      expect(mock.issueCallsFor(uuid)).toHaveLength(0);
+      const [draftCall] = mock.draftCallsFor(uuid);
+      expect(mock.draftCallsFor(uuid)).toHaveLength(1);
+      expect(draftCall.path).toBe(
+        `${API_PREFIX}InvoiceAPI/InvoiceWS/createOrUpdateInvoiceDraft/${TAX_CODE}`,
+      );
+      expect(issuePayload(draftCall)).toMatchObject({
+        generalInvoiceInfo: {
+          templateCode: '1/001',
+          invoiceSeries: 'K26TAA',
+          transactionUuid: uuid,
+        },
+        buyerInfo: {
+          buyerName: paid.student.fullName,
+          buyerIdNo: paid.student.identifierCode,
+          buyerAddressLine: paid.student.address,
+        },
+        summarizeInfo: { totalAmountWithTax: 720000 },
+      });
+      expect(
+        await events.countBy({
+          invoiceId: draft.id,
+          eventType: 'DRAFT_CREATED',
+        }),
+      ).toBe(1);
+
+      // Nháp chưa ký: 7.21 không thấy → giữ nháp, không đổi trạng thái lỗi.
+      await syncOnce(draft.id);
+      expect(await invoices.findOneByOrFail({ id: draft.id })).toMatchObject({
+        status: EInvoiceStatus.DRAFT,
+        invoiceNo: null,
+        errorCode: null,
+      });
+      await settle(500);
+      expect((await invoices.findOneByOrFail({ id: draft.id })).status).toBe(
+        EInvoiceStatus.DRAFT,
+      );
+
+      mock.signDraft(uuid);
+      await syncOnce(draft.id);
+      const done = await waitForStatus(
+        paid.paymentId,
+        EInvoiceStatus.COMPLETED,
+      );
+      expect(done.invoiceNo).toMatch(/^K26TAA/);
+      expect(await files.countBy({ invoiceId: done.id })).toBe(2);
+      await waitFor('email', () =>
+        Promise.resolve(
+          mock
+            .callsTo('sendEmailToCustomer')
+            .some((call) => call.json?.transactionUuid === uuid),
+        ),
+      );
+      expect(mock.draftCallsFor(uuid)).toHaveLength(1);
+      expect(mock.issueCallsFor(uuid)).toHaveLength(0);
+    });
+
+    it('hủy khớp khi nháp chưa ký → tra 7.21 rồi hủy nội bộ (ghi chú phải xóa nháp trên cổng); khớp lại tạo nháp mới', async () => {
+      const first = await newOrder();
+      const paymentId = await ingestUnmatched('DRAFTVOID');
+      await reconciliationService.match(paymentId, first.order.id, { userId });
+      const draft = await waitForStatus(paymentId, EInvoiceStatus.DRAFT);
+      const searches = mock.callsTo('searchInvoiceByTransactionUuid').length;
+
+      await reconciliationService.unmatch(paymentId, 'Khớp nhầm', { userId });
+      expect(mock.callsTo('searchInvoiceByTransactionUuid').length).toBe(
+        searches + 1,
+      );
+      expect((await invoices.findOneByOrFail({ id: draft.id })).status).toBe(
+        EInvoiceStatus.CANCELLED,
+      );
+      const voided = await events.findOneByOrFail({
+        invoiceId: draft.id,
+        eventType: 'DRAFT_VOIDED',
+      });
+      expect(voided.payload).toMatchObject({
+        reason: 'Khớp nhầm',
+        providerDraftLeft: true,
+      });
+
+      const second = await newOrder();
+      await reconciliationService.match(paymentId, second.order.id, { userId });
+      const redraft = await waitForStudentInvoice(
+        paymentId,
+        second.student.id,
+        EInvoiceStatus.DRAFT,
+      );
+      expect(redraft.transactionUuid).not.toBe(draft.transactionUuid);
+    });
+
+    it('hủy khớp khi nháp đã được ký trên cổng → chặn và báo số hóa đơn', async () => {
+      const first = await newOrder();
+      const paymentId = await ingestUnmatched('DRAFTSIGNED');
+      await reconciliationService.match(paymentId, first.order.id, { userId });
+      const draft = await waitForStatus(paymentId, EInvoiceStatus.DRAFT);
+      mock.signDraft(draft.transactionUuid);
+      const signedNo = mock.invoices.get(draft.transactionUuid)!.invoiceNo;
+
+      await expect(
+        reconciliationService.unmatch(paymentId, 'Khớp nhầm', { userId }),
+      ).rejects.toThrow(signedNo);
+      expect((await invoices.findOneByOrFail({ id: draft.id })).status).toBe(
+        EInvoiceStatus.DRAFT,
+      );
+    });
+  });
+
+  describe('Parent Portal: đăng ký nhận hóa đơn điện tử khi tạo đơn', () => {
+    let orders: Repository<PaymentOrder>;
+    const PASSWORD = '15082015';
+
+    beforeAll(() => {
+      orders = app.get(getRepositoryToken(PaymentOrder));
+    });
+
+    /** A student whose parent can log in (unique phone + birth date) and owes 720.000đ. */
+    async function newParent() {
+      const phone = `09${String(Date.now() + seq * 7919).slice(-8)}`;
+      const { student, receivableId } = await createStudentWithReceivable(
+        '720000',
+        { parentPhone: phone, dateOfBirth: '2015-08-15' },
+      );
+      const login = await api()
+        .post('/parent-auth/login')
+        .send({ username: phone, password: PASSWORD })
+        .expect(201);
+      const token = (login.body as { data: { accessToken: string } }).data
+        .accessToken;
+      return { student, receivableId, token };
+    }
+
+    interface OrderBody {
+      id: string;
+      orderCode: string;
+      status: string;
+      requestedAmount: string;
+      invoiceEmail: string | null;
+      eInvoice?: Record<string, unknown>;
+    }
+
+    async function createOrder(
+      parent: Awaited<ReturnType<typeof newParent>>,
+      invoice?: unknown,
+    ): Promise<OrderBody> {
+      const res = await api()
+        .post('/parent/payment-orders')
+        .set(auth(parent.token))
+        .send({
+          items: [{ receivableId: parent.receivableId }],
+          paymentMethod: 'VIETQR',
+          ...(invoice === undefined ? {} : { invoice }),
+        })
+        .expect(201);
+      return (res.body as { data: OrderBody }).data;
+    }
+
+    const getOrder = async (id: string, token: string) =>
+      (
+        (
+          await api()
+            .get(`/parent/payment-orders/${id}`)
+            .set(auth(token))
+            .expect(200)
+        ).body as { data: OrderBody }
+      ).data;
+
+    const getQr = async (id: string, token: string) =>
+      (
+        (
+          await api()
+            .get(`/parent/payment-orders/${id}/qr`)
+            .set(auth(token))
+            .expect(200)
+        ).body as {
+          data: { status: string; eInvoice?: Record<string, unknown> };
+        }
+      ).data;
+
+    /** Bank transfer quoting the order code, as the parent's banking app sends it. */
+    const payOrder = (order: OrderBody) =>
+      paymentTransactionsService.ingest(
+        'VIETQR',
+        {
+          id: `EI-PARENT-${runId}-${++seq}`,
+          gateway: 'VCB',
+          transactionDate: new Date().toISOString(),
+          accountNumber: schoolA.bankAccountNumber,
+          content: order.orderCode,
+          transferType: 'in',
+          transferAmount: Number(order.requestedAmount),
+        },
+        {},
+      );
+
+    it('tạo đơn không yêu cầu hóa đơn: giữ nguyên hành vi, không có eInvoice ở cả 3 endpoint', async () => {
+      const parent = await newParent();
+      const order = await createOrder(parent);
+      expect(order.status).toBe('PENDING');
+      expect(order.invoiceEmail).toBeNull();
+      expect(order).not.toHaveProperty('eInvoice');
+      expect(await getOrder(order.id, parent.token)).not.toHaveProperty(
+        'eInvoice',
+      );
+      expect(await getQr(order.id, parent.token)).not.toHaveProperty(
+        'eInvoice',
+      );
+    });
+
+    it('tạo đơn với email (có khoảng trắng, chữ hoa) → lưu email đã chuẩn hóa, eInvoice PENDING_PAYMENT, chưa gọi Viettel', async () => {
+      const parent = await newParent();
+      const issueCalls = mock.callsTo('/createInvoice/').length;
+      const order = await createOrder(parent, {
+        email: '  PhuHuynh.E2E@Example.COM ',
+      });
+      const pending = {
+        status: 'PENDING_PAYMENT',
+        buyerEmail: 'phuhuynh.e2e@example.com',
+        invoiceNo: null,
+        issuedAt: null,
+        emailSentAt: null,
+      };
+      expect(order.eInvoice).toEqual(pending);
+      expect(order.invoiceEmail).toBe('phuhuynh.e2e@example.com');
+      expect((await getOrder(order.id, parent.token)).eInvoice).toEqual(
+        pending,
+      );
+      const qr = await getQr(order.id, parent.token);
+      expect(qr.status).toBe('PENDING');
+      expect(qr.eInvoice).toEqual(pending);
+
+      await settle(500);
+      expect(await invoices.countBy({ paymentOrderId: order.id })).toBe(0);
+      expect(mock.callsTo('/createInvoice/')).toHaveLength(issueCalls);
+    });
+
+    it.each([
+      ['rỗng', { email: '' }, 'invoice.email là bắt buộc'],
+      ['thiếu email', {}, 'invoice.email là bắt buộc'],
+      [
+        'sai định dạng',
+        { email: 'phuhuynh@' },
+        'invoice.email không đúng định dạng',
+      ],
+    ])('email %s → 400, không tạo đơn', async (_, invoice, message) => {
+      const parent = await newParent();
+      const res = await api()
+        .post('/parent/payment-orders')
+        .set(auth(parent.token))
+        .send({ items: [{ receivableId: parent.receivableId }], invoice })
+        .expect(400);
+      expect(JSON.stringify(res.body)).toContain(message);
+      expect(await orders.countBy({ studentId: parent.student.id })).toBe(0);
+    });
+
+    it('thanh toán thành công → phát hành, gửi hóa đơn tới email đã đăng ký (không phải email hồ sơ) và trả số hóa đơn', async () => {
+      const parent = await newParent();
+      const order = await createOrder(parent, {
+        email: 'DangKy.HoaDon@Example.com',
+      });
+      const paid = await payOrder(order);
+      expect(paid.matched).toBe(true);
+
+      const issued = await waitFor('invoice emailed', async () => {
+        const invoice = await invoices.findOneBy({ paymentOrderId: order.id });
+        return invoice?.status === EInvoiceStatus.COMPLETED &&
+          invoice.emailSentAt
+          ? invoice
+          : null;
+      });
+      expect(issued.buyerEmail).toBe('dangky.hoadon@example.com');
+      const [issueCall] = mock.issueCallsFor(issued.transactionUuid);
+      expect(issuePayload(issueCall).buyerInfo.buyerEmail).toBe(
+        'dangky.hoadon@example.com',
+      );
+      const emails = mock
+        .callsTo('sendEmailToCustomer')
+        .filter(
+          (call) => call.json?.transactionUuid === issued.transactionUuid,
+        );
+      expect(emails).toHaveLength(1);
+      expect(emails[0].json?.buyerEmail).toBe('dangky.hoadon@example.com');
+      expect(parent.student.parentEmail).not.toBe('dangky.hoadon@example.com');
+
+      const after = await getOrder(order.id, parent.token);
+      expect(after.status).toBe('PAID');
+      expect(after.eInvoice).toEqual({
+        status: EInvoiceStatus.COMPLETED,
+        buyerEmail: 'dangky.hoadon@example.com',
+        invoiceNo: issued.invoiceNo,
+        issuedAt: issued.issuedAt!.toISOString(),
+        emailSentAt: issued.emailSentAt!.toISOString(),
+      });
+    });
+
+    it.each(['EXPIRED', 'CANCELLED', 'FAILED'] as const)(
+      'đơn %s → chuyển khoản tới không được khớp, không phát hành hóa đơn, eInvoice CANCELLED',
+      async (status) => {
+        const parent = await newParent();
+        const order = await createOrder(parent, {
+          email: 'phuhuynh@example.com',
+        });
+        if (status === 'EXPIRED') {
+          await orders.update(order.id, {
+            expiresAt: new Date(Date.now() - 1000),
+          });
+          const qr = await getQr(order.id, parent.token);
+          expect(qr.status).toBe('EXPIRED');
+          expect(qr.eInvoice).toMatchObject({ status: 'CANCELLED' });
+        } else {
+          await orders.update(order.id, { status: PaymentOrderStatus[status] });
+        }
+        const paid = await payOrder(order);
+        expect(paid.matched).toBe(false);
+
+        await settle(500);
+        expect(await invoices.countBy({ paymentOrderId: order.id })).toBe(0);
+        expect((await getOrder(order.id, parent.token)).eInvoice).toEqual({
+          status: 'CANCELLED',
+          buyerEmail: 'phuhuynh@example.com',
+          invoiceNo: null,
+          issuedAt: null,
+          emailSentAt: null,
+        });
+      },
+    );
+
+    it('phụ huynh không đọc được đơn/hóa đơn, không dùng được khoản nợ của học sinh khác', async () => {
+      const owner = await newParent();
+      const other = await newParent();
+      const order = await createOrder(owner, { email: 'chu.don@example.com' });
+
+      for (const path of [
+        `/parent/payment-orders/${order.id}`,
+        `/parent/payment-orders/${order.id}/qr`,
+      ]) {
+        const res = await api().get(path).set(auth(other.token)).expect(403);
+        expect(JSON.stringify(res.body)).not.toContain('chu.don@example.com');
+        await api().get(path).expect(401);
+      }
+
+      await api()
+        .post('/parent/payment-orders')
+        .set(auth(other.token))
+        .send({
+          items: [{ receivableId: owner.receivableId }],
+          invoice: { email: 'ke.gian@example.com' },
+        })
+        .expect(400);
+      await api()
+        .post('/parent/payment-orders')
+        .set(auth(other.token))
+        .send({
+          studentId: owner.student.id,
+          items: [{ receivableId: owner.receivableId }],
+        })
+        .expect(400);
+      expect(await orders.countBy({ studentId: owner.student.id })).toBe(1);
+    });
   });
 });

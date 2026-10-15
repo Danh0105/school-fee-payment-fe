@@ -60,3 +60,67 @@ describe('ViettelSinvoiceMapper hình thức thanh toán', () => {
     }
   });
 });
+
+describe('ViettelSinvoiceMapper người mua', () => {
+  const mapper = new ViettelSinvoiceMapper(new MoneyCalculatorService());
+  const invoice = {
+    templateCode: '1/001',
+    invoiceSeries: 'C26TIS',
+    adjustmentType: '1',
+    transactionUuid: '5f8bf423-5002-4dcf-9ca9-16853328eabe',
+  } as EInvoice;
+  const receipt = {
+    paymentMethod: PaymentMethod.VIETQR,
+    items: [
+      { receivableId: null, description: 'Học phí', amount: new Decimal(1) },
+    ],
+  } as unknown as Receipt;
+  const config = {
+    currencyCode: 'VND',
+    taxPercentage: '-1',
+    pricesIncludeTax: null,
+  } as EInvoiceConfig;
+  const student = (overrides: Partial<Student> = {}) =>
+    ({
+      fullName: 'Nguyễn Văn A',
+      studentCode: 'HS001',
+      identifierCode: '079123456789',
+      address: '12 Lê Lợi, Quận 1, TP Hồ Chí Minh',
+      parentName: 'Nguyễn Văn B',
+      parentPhone: '0901234567',
+      phone: null,
+      parentEmail: 'b@example.com',
+      ...overrides,
+    }) as unknown as Student;
+
+  it('hóa đơn đứng tên học sinh: họ tên, mã định danh ở ô căn cước công dân, địa chỉ học sinh', () => {
+    const { buyerInfo } = mapper.fromReceipt(
+      invoice,
+      receipt,
+      student(),
+      config,
+    );
+    expect(buyerInfo).toMatchObject({
+      buyerName: 'Nguyễn Văn A',
+      buyerCode: 'HS001',
+      buyerIdType: '1',
+      buyerIdNo: '079123456789',
+      buyerAddressLine: '12 Lê Lợi, Quận 1, TP Hồ Chí Minh',
+      buyerPhoneNumber: '0901234567',
+      buyerEmail: 'b@example.com',
+    });
+  });
+
+  it('học sinh chưa có mã định danh và địa chỉ thì bỏ trống các ô đó', () => {
+    const { buyerInfo } = mapper.fromReceipt(
+      invoice,
+      receipt,
+      student({ identifierCode: null, address: null }),
+      config,
+    );
+    expect(buyerInfo.buyerName).toBe('Nguyễn Văn A');
+    expect(buyerInfo.buyerIdType).toBeUndefined();
+    expect(buyerInfo.buyerIdNo).toBeUndefined();
+    expect(buyerInfo.buyerAddressLine).toBeUndefined();
+  });
+});

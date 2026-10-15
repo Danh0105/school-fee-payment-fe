@@ -79,6 +79,10 @@ export class PaymentOrder extends BaseEntity {
   @Column({ type: 'uuid', nullable: true })
   createdBy: string | null;
 
+  /** The parent asked for an e-invoice, sent here once the payment is issued. */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  invoiceEmail: string | null;
+
   @OneToMany(() => PaymentOrderItem, (item) => item.paymentOrder)
   items: PaymentOrderItem[];
 }

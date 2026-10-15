@@ -1,5 +1,6 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { School } from '../../../schools/entities/school.entity';
+import { EInvoiceIssueMode } from './einvoice.enums';
 
 @Entity('einvoice_configs')
 export class EInvoiceConfig {
@@ -22,6 +23,9 @@ export class EInvoiceConfig {
 
   @Column({ type: 'boolean', default: true })
   autoIssue: boolean;
+
+  @Column({ type: 'varchar', length: 10, default: EInvoiceIssueMode.DRAFT })
+  issueMode: EInvoiceIssueMode;
 
   @Column({ type: 'varchar', length: 20 })
   supplierTaxCode: string;

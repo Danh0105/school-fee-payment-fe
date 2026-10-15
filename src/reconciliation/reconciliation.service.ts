@@ -107,6 +107,7 @@ export class ReconciliationService {
             paymentId: transaction.id,
             receiptId: allocation.receiptId,
             studentId: order.studentId,
+            paymentOrderId: order.id,
           },
           manager,
         );

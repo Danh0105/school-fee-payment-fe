@@ -102,6 +102,58 @@ describe('ViettelSinvoiceService', () => {
     });
   });
 
+  it('7.21 của nháp chưa ký (chỉ có ký hiệu, chưa có số) không bị coi là số hóa đơn', async () => {
+    // Phản hồi thật của Viettel production cho một nháp 7.8 (15/10/2026).
+    (http.request as jest.Mock).mockResolvedValue({
+      errorCode: null,
+      result: [
+        {
+          supplierTaxCode: '0316660845',
+          invoiceNo: 'C21TIS',
+          reservationCode: null,
+          issueDate: 1792031530000,
+          status: 'Hóa đơn gốc',
+          exchangeStatus: null,
+          exchangeDes: null,
+          codeOfTax: null,
+        },
+      ],
+    });
+    await expect(
+      service.getInvoiceByTransactionUuid(
+        '0316660845',
+        payload.generalInvoiceInfo.transactionUuid,
+      ),
+    ).resolves.toMatchObject({ invoiceNo: '', exists: true });
+  });
+
+  it('7.2 trả ký hiệu không kèm số thì coi như chưa cấp số', async () => {
+    (http.request as jest.Mock).mockResolvedValue({
+      result: { invoiceNo: 'C26TIS', transactionID: 'tx-1' },
+    });
+    await expect(service.issueInvoice(payload, '0101')).resolves.toMatchObject({
+      invoiceNo: '',
+      transactionID: 'tx-1',
+    });
+  });
+
+  it('tạo nháp 7.8 gửi đúng payload và transactionUuid', async () => {
+    (http.request as jest.Mock).mockResolvedValue({});
+    await expect(
+      service.createOrUpdateInvoiceDraft(payload, '0101'),
+    ).resolves.toEqual({});
+    expect(http.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: expect.objectContaining({
+          path: 'InvoiceAPI/InvoiceWS/createOrUpdateInvoiceDraft/{supplierTaxCode}',
+        }),
+        data: payload,
+        pathParams: { supplierTaxCode: '0101' },
+        transactionUuid: payload.generalInvoiceInfo.transactionUuid,
+      }),
+    );
+  });
+
   it('coi result[] rỗng của 7.21 là hóa đơn chưa sẵn sàng', async () => {
     (http.request as jest.Mock).mockResolvedValue({
       errorCode: null,

@@ -26,6 +26,10 @@ export interface EInvoiceProvider {
     data: ViettelInvoicePayloadDto,
     supplierTaxCode: string,
   ): Promise<ViettelIssueResult>;
+  createOrUpdateInvoiceDraft(
+    data: ViettelInvoicePayloadDto,
+    supplierTaxCode: string,
+  ): Promise<Partial<ViettelIssueResult>>;
   getInvoiceByTransactionUuid(
     supplierTaxCode: string,
     uuid: string,
