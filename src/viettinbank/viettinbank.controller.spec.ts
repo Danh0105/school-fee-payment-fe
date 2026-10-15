@@ -1,3 +1,4 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ViettinbankController } from './viettinbank.controller';
 import { CryptoKeyService } from './crypto-key.service';
@@ -35,7 +36,7 @@ describe('ViettinbankController', () => {
     vac?: string;
   }) {
     const crypto = {
-      verify: overrides?.verify ?? jest.fn().mockReturnValue(true),
+      verifyInquiry: overrides?.verify ?? jest.fn().mockReturnValue('API'),
       sign: jest.fn().mockReturnValue('signed'),
     } as unknown as CryptoKeyService;
     const paymentOrdersService = {
@@ -60,7 +61,10 @@ describe('ViettinbankController', () => {
   describe('inqBill (1100 -> 1110)', () => {
     it('trả về mã 99 khi thiếu dữ liệu bắt buộc', async () => {
       const controller = makeController();
-      const dto = { header: baseHeader, data: undefined } as unknown as InqBillRequestDto;
+      const dto = {
+        header: baseHeader,
+        data: undefined,
+      } as unknown as InqBillRequestDto;
 
       const res = await controller.inqBill(dto);
 
@@ -102,7 +106,10 @@ describe('ViettinbankController', () => {
       });
       const controller = makeController({ findByTransferContent, vac: '1ICS' });
       const dataWithVac = { ...baseData, custCode: '1ICS8CAP250730152800001' };
-      const dto = { header: baseHeader, data: dataWithVac } as InqBillRequestDto;
+      const dto = {
+        header: baseHeader,
+        data: dataWithVac,
+      } as InqBillRequestDto;
 
       await controller.inqBill(dto);
 
@@ -177,7 +184,10 @@ describe('ViettinbankController', () => {
 
     it('giữ nguyên header.msgId/channelId/providerId/merchantId/productId từ request (bản tin response điền lại)', async () => {
       const controller = makeController();
-      const dto = { header: baseHeader, data: undefined } as unknown as InqBillRequestDto;
+      const dto = {
+        header: baseHeader,
+        data: undefined,
+      } as unknown as InqBillRequestDto;
 
       const res = await controller.inqBill(dto);
 
@@ -202,7 +212,10 @@ describe('ViettinbankController', () => {
 
     it('gatewayId là undefined khi request không gửi kèm (backward compatible)', async () => {
       const controller = makeController();
-      const dto = { header: baseHeader, data: undefined } as unknown as InqBillRequestDto;
+      const dto = {
+        header: baseHeader,
+        data: undefined,
+      } as unknown as InqBillRequestDto;
 
       const res = await controller.inqBill(dto);
 
@@ -226,7 +239,9 @@ describe('ViettinbankController', () => {
     };
 
     it('trả về mã 00 khi ingest khớp giao dịch', async () => {
-      const ingest = jest.fn().mockResolvedValue({ matched: true, duplicate: false });
+      const ingest = jest
+        .fn()
+        .mockResolvedValue({ matched: true, duplicate: false });
       const controller = makeController({ ingest });
 
       const res = await controller.notifyBill(notifyDto);
@@ -237,7 +252,9 @@ describe('ViettinbankController', () => {
     });
 
     it('trả về mã 00 khi giao dịch trùng (đã xử lý bởi retry trước đó)', async () => {
-      const ingest = jest.fn().mockResolvedValue({ matched: false, duplicate: true });
+      const ingest = jest
+        .fn()
+        .mockResolvedValue({ matched: false, duplicate: true });
       const controller = makeController({ ingest });
 
       const res = await controller.notifyBill(notifyDto);
@@ -246,7 +263,9 @@ describe('ViettinbankController', () => {
     });
 
     it('trả về mã 05 khi không khớp được đơn hàng', async () => {
-      const ingest = jest.fn().mockResolvedValue({ matched: false, duplicate: false });
+      const ingest = jest
+        .fn()
+        .mockResolvedValue({ matched: false, duplicate: false });
       const controller = makeController({ ingest });
 
       const res = await controller.notifyBill(notifyDto);
@@ -254,13 +273,26 @@ describe('ViettinbankController', () => {
       expect(res.errorCode).toBe('05');
     });
 
-    it('trả về mã 01 khi verify chữ ký/ingest ném lỗi', async () => {
-      const ingest = jest.fn().mockRejectedValue(new Error('Chữ ký webhook không hợp lệ'));
+    it('trả về mã 01 khi chữ ký notify sai (ingest ném 401)', async () => {
+      const ingest = jest
+        .fn()
+        .mockRejectedValue(
+          new UnauthorizedException('Chữ ký webhook không hợp lệ'),
+        );
       const controller = makeController({ ingest });
 
       const res = await controller.notifyBill(notifyDto);
 
       expect(res.errorCode).toBe('01');
+    });
+
+    it('lỗi xử lý không phải chữ ký → mã 99 (để ngân hàng gửi lại), không báo nhầm là sai chữ ký', async () => {
+      const ingest = jest.fn().mockRejectedValue(new Error('DB timeout'));
+      const controller = makeController({ ingest });
+
+      const res = await controller.notifyBill(notifyDto);
+
+      expect(res.errorCode).toBe('99');
     });
   });
 });

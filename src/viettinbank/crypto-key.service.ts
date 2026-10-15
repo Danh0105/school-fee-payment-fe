@@ -4,6 +4,9 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
+/** VietinBank's two certificates: API (generate-QR, inq-bill) and NOTIFYTRANS. */
+export type VietinbankCert = 'API' | 'NOTIFY';
+
 /**
  * Loads the RSA keypair used to sign VietinBank responses and the bank's
  * public certificate used to verify inbound (inq-bill/notify-bill)
@@ -56,13 +59,44 @@ export class CryptoKeyService implements OnModuleInit {
   /** Verifies a signature from VietinBank against the bank's notify cert. */
   verify(data: string, signature: string): boolean {
     this.loadKeys();
+    return this.verifyWith(this.notifyCert!, data, signature);
+  }
+
+  /**
+   * inq-bill ("API vấn tin"): VietinBank signs it with the key of its API
+   * certificate (VIETINBANK_PUBLIC_KEY_PATH), the one that also signs
+   * generate-QR responses. The notify certificate is accepted as a fallback;
+   * both belong to VietinBank. Returns which certificate matched, or null.
+   */
+  verifyInquiry(data: string, signature: string): VietinbankCert | null {
+    return this.firstMatch(data, signature, ['API', 'NOTIFY']);
+  }
+
+  /** notify-bill: VietinBank's NOTIFYTRANS certificate, API cert as fallback. */
+  verifyNotify(data: string, signature: string): VietinbankCert | null {
+    return this.firstMatch(data, signature, ['NOTIFY', 'API']);
+  }
+
+  private firstMatch(
+    data: string,
+    signature: string,
+    order: VietinbankCert[],
+  ): VietinbankCert | null {
+    this.loadKeys();
+    const keys = { API: this.publicKey!, NOTIFY: this.notifyCert! };
+    return (
+      order.find((cert) => this.verifyWith(keys[cert], data, signature)) ?? null
+    );
+  }
+
+  private verifyWith(key: string, data: string, signature: string): boolean {
     try {
       const verifier = crypto.createVerify('RSA-SHA256');
       verifier.update(Buffer.from(data, 'utf8'));
       verifier.end();
       const cleanSignature = signature.replace(/[\r\n]/g, '');
       return verifier.verify(
-        { key: this.notifyCert!, padding: crypto.constants.RSA_PKCS1_PADDING },
+        { key, padding: crypto.constants.RSA_PKCS1_PADDING },
         Buffer.from(cleanSignature, 'base64'),
       );
     } catch {

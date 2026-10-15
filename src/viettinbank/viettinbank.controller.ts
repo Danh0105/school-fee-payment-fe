@@ -1,13 +1,26 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpException,
+  HttpStatus,
+  Logger,
+  Post,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '../common/decorators/public.decorator';
 import { RawResponse } from '../common/decorators/raw-response.decorator';
 import { CryptoKeyService } from './crypto-key.service';
 import { InqBillRequestDto, InqBillResponse } from './dto/inq-bill.dto';
-import { NotifyBillRequestDto, NotifyBillResponse } from './dto/notify-bill.dto';
+import {
+  NotifyBillRequestDto,
+  NotifyBillResponse,
+} from './dto/notify-bill.dto';
 import { PaymentOrdersService } from '../payment-orders/payment-orders.service';
 import { PaymentTransactionsService } from '../payment-transactions/payment-transactions.service';
-import { PaymentOrderStatus, PaymentProviderCode } from '../common/enums/status.enum';
+import {
+  PaymentOrderStatus,
+  PaymentProviderCode,
+} from '../common/enums/status.enum';
 
 const n = (v: unknown) => (v === null || v === undefined ? '' : String(v));
 
@@ -42,6 +55,10 @@ export class ViettinbankController {
     private readonly config: ConfigService,
   ) {}
 
+  // Every bank callback is logged with its outcome: a rejected notify-bill
+  // otherwise leaves no trace of money VietinBank says it received.
+  private readonly logger = new Logger(ViettinbankController.name);
+
   @Public()
   @RawResponse()
   @Post('vpg/collection/api/v1/inq-bill')
@@ -49,12 +66,26 @@ export class ViettinbankController {
     const dto = body as InqBillRequestDto;
     const { header, data } = dto ?? {};
 
-    if (!header || !data || !data.transId || !data.transTime || !data.custCode) {
-      return this.buildInqBillResponse(dto, '', '', '0', '99', 'Thiếu dữ liệu bắt buộc');
+    if (
+      !header ||
+      !data ||
+      !data.transId ||
+      !data.transTime ||
+      !data.custCode
+    ) {
+      return this.buildInqBillResponse(
+        dto,
+        '',
+        '',
+        '0',
+        '99',
+        'Thiếu dữ liệu bắt buộc',
+      );
     }
 
     const verifyString = n(data.transId) + n(data.transTime) + n(data.custCode);
-    if (!this.crypto.verify(verifyString, header.signature)) {
+    const cert = this.crypto.verifyInquiry(verifyString, n(header.signature));
+    if (!cert) {
       return this.buildInqBillResponse(dto, '', '', '0', '01', 'Sai chữ ký');
     }
 
@@ -62,17 +93,38 @@ export class ViettinbankController {
       this.stripVac(data.custCode),
     );
     if (!order) {
-      return this.buildInqBillResponse(dto, '', '', '0', '02', 'Ma KH/Hoa don khong ton tai');
+      return this.buildInqBillResponse(
+        dto,
+        '',
+        '',
+        '0',
+        '02',
+        'Ma KH/Hoa don khong ton tai',
+      );
     }
     if (
       ![PaymentOrderStatus.PENDING, PaymentOrderStatus.PARTIALLY_PAID].includes(
         order.status,
       )
     ) {
-      return this.buildInqBillResponse(dto, '', '', '0', '02', 'Ma KH/Hoa don khong ton tai');
+      return this.buildInqBillResponse(
+        dto,
+        '',
+        '',
+        '0',
+        '02',
+        'Ma KH/Hoa don khong ton tai',
+      );
     }
     if (order.expiresAt && new Date() > order.expiresAt) {
-      return this.buildInqBillResponse(dto, '', '', '0', '02', 'Hoa don het han');
+      return this.buildInqBillResponse(
+        dto,
+        '',
+        '',
+        '0',
+        '02',
+        'Hoa don het han',
+      );
     }
 
     return this.buildInqBillResponse(
@@ -107,8 +159,22 @@ export class ViettinbankController {
         return this.buildNotifyResponse(dto, '05', 'Khong khop don hang');
       }
       return this.buildNotifyResponse(dto, '00', 'Thanh cong');
-    } catch {
-      return this.buildNotifyResponse(dto, '01', 'Sai chữ ký');
+    } catch (error) {
+      if (
+        error instanceof HttpException &&
+        error.getStatus() === Number(HttpStatus.UNAUTHORIZED)
+      ) {
+        return this.buildNotifyResponse(dto, '01', 'Sai chữ ký');
+      }
+      // Not a signature problem: say so, so the bank retries and the cause
+      // is in the log instead of being reported as a bad signature.
+      this.logger.error(
+        `notify-bill transId=${n(dto?.transId)} lỗi xử lý: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return this.buildNotifyResponse(dto, '99', 'Loi he thong');
     }
   }
 
@@ -134,6 +200,16 @@ export class ViettinbankController {
       preseve2: null,
       preseve3: null,
     };
+    this.logger.log(
+      JSON.stringify({
+        endpoint: 'inq-bill',
+        transId: details.transId,
+        custCode: details.custCode,
+        amount,
+        errorCode,
+        errorDesc,
+      }),
+    );
     const signData =
       details.transId +
       details.transTime +
@@ -167,6 +243,16 @@ export class ViettinbankController {
     errorCode: string,
     errorDesc: string,
   ): NotifyBillResponse {
+    this.logger.log(
+      JSON.stringify({
+        endpoint: 'notify-bill',
+        transId: n(dto?.transId),
+        custCode: n(dto?.custCode),
+        amount: n(dto?.amount),
+        errorCode,
+        errorDesc,
+      }),
+    );
     const signData = n(dto.transId) + errorCode + errorDesc;
     return {
       transId: dto.transId,
@@ -191,16 +277,27 @@ export class ViettinbankController {
       : custCode;
   }
 
+  /** yyyyMMddHHmmss in Vietnam time; the API container runs in UTC. */
   private timestamp(): string {
-    const d = new Date();
-    const pad = (v: number) => v.toString().padStart(2, '0');
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date());
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((p) => p.type === type)?.value ?? '';
     return (
-      d.getFullYear().toString() +
-      pad(d.getMonth() + 1) +
-      pad(d.getDate()) +
-      pad(d.getHours()) +
-      pad(d.getMinutes()) +
-      pad(d.getSeconds())
+      part('year') +
+      part('month') +
+      part('day') +
+      part('hour') +
+      part('minute') +
+      part('second')
     );
   }
 }

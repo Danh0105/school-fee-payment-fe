@@ -25,5 +25,5 @@ Self-contained VietinBank eBank Biz collection integration, packaged so it can b
 | `VIETINBANK_PROVIDER_ID` / `VIETINBANK_MERCHANT_ID` | Assigned by VietinBank onboarding |
 | `VIETINBANK_ACCOUNT` | Virtual sub-account prefix; order code is appended to build the full account number |
 | `VIETINBANK_PRIVATE_KEY_PATH` | Our RSA private key, used to sign responses to VietinBank |
-| `VIETINBANK_PUBLIC_KEY_PATH` | Our RSA public key, used to verify VietinBank's generate-QR response signature |
-| `VIETINBANK_NOTIFY_CERT_PATH` | VietinBank's certificate, used to verify inbound `inq-bill`/`notify-bill` signatures |
+| `VIETINBANK_PUBLIC_KEY_PATH` | VietinBank's API certificate (`PRD_VIETINBANK_API_CERT`): verifies the generate-QR response and inbound `inq-bill` ("API vấn tin") signatures |
+| `VIETINBANK_NOTIFY_CERT_PATH` | VietinBank's NOTIFYTRANS certificate (`PROD_VIETINBANK_NOTIFYTRANS_CERT`): verifies inbound `notify-bill` signatures. Each callback falls back to the other certificate and logs which one matched |

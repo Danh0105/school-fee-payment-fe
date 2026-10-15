@@ -110,7 +110,7 @@ export class ViettinbankProvider implements PaymentProvider {
       n(rawBody.bankTransId) +
       n(rawBody.remark);
 
-    return this.cryptoKeys.verify(verifyData, signature);
+    return Boolean(this.cryptoKeys.verifyNotify(verifyData, signature));
   }
 
   parseTransaction(payload: Record<string, unknown>): ParsedTransaction {

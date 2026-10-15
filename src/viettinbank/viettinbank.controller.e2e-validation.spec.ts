@@ -25,15 +25,24 @@ describe('ViettinbankController behind the real global ValidationPipe', () => {
       providers: [
         {
           provide: CryptoKeyService,
-          useValue: { verify: jest.fn().mockReturnValue(true), sign: jest.fn().mockReturnValue('signed') },
+          useValue: {
+            verifyInquiry: jest.fn().mockReturnValue('API'),
+            sign: jest.fn().mockReturnValue('signed'),
+          },
         },
         {
           provide: PaymentOrdersService,
-          useValue: { findByTransferContent: jest.fn().mockResolvedValue(null) },
+          useValue: {
+            findByTransferContent: jest.fn().mockResolvedValue(null),
+          },
         },
         {
           provide: PaymentTransactionsService,
-          useValue: { ingest: jest.fn().mockResolvedValue({ matched: false, duplicate: false }) },
+          useValue: {
+            ingest: jest
+              .fn()
+              .mockResolvedValue({ matched: false, duplicate: false }),
+          },
         },
         {
           provide: ConfigService,

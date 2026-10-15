@@ -35,7 +35,7 @@ describe('ViettinbankProvider', () => {
     const config = {
       get: (key: string) => (key === 'viettinbank.account' ? vac : undefined),
     } as unknown as ConfigService;
-    const cryptoKeys = { verify } as unknown as CryptoKeyService;
+    const cryptoKeys = { verifyNotify: verify } as unknown as CryptoKeyService;
     const api = { generateQr } as unknown as ViettinbankApiService;
     return new ViettinbankProvider(config, cryptoKeys, api);
   }
@@ -149,7 +149,10 @@ describe('ViettinbankProvider', () => {
     it('cho phép amount = 0 (không throw vì amount hợp lệ, chỉ null/undefined mới bị chặn)', () => {
       const provider = makeProvider(jest.fn());
 
-      const parsed = provider.parseTransaction({ ...notifyPayload, amount: '0' });
+      const parsed = provider.parseTransaction({
+        ...notifyPayload,
+        amount: '0',
+      });
 
       expect(parsed.amount.equals(new Decimal(0))).toBe(true);
     });
