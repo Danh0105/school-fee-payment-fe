@@ -73,6 +73,23 @@ describe('CreateParentPaymentOrderDto', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('nhận clientRequestId (khóa chống tạo đơn trùng); số được đổi sang chuỗi', async () => {
+    expect(
+      (await validate({ items, clientRequestId: 'req-123' })).clientRequestId,
+    ).toBe('req-123');
+    expect(
+      (await validate({ items, clientRequestId: 1792044110905 }))
+        .clientRequestId,
+    ).toBe('1792044110905');
+  });
+
+  it.each([
+    ['rỗng', '', 'clientRequestId không được rỗng'],
+    ['quá 100 ký tự', 'x'.repeat(101), 'clientRequestId tối đa 100 ký tự'],
+  ])('clientRequestId %s → 400', async (_, clientRequestId, message) => {
+    expect(await messagesOf({ items, clientRequestId })).toContain(message);
+  });
+
   it('không nhận studentId từ client', async () => {
     const messages = await messagesOf({
       items,

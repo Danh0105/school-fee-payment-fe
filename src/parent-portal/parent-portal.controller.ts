@@ -127,7 +127,12 @@ export class ParentPortalController {
         paymentMethod: this.qrMethodFor(dto.paymentMethod),
       },
       undefined,
-      { invoiceEmail: dto.invoice?.email ?? null },
+      {
+        invoiceEmail: dto.invoice?.email ?? null,
+        ...(dto.clientRequestId
+          ? { clientRequestId: dto.clientRequestId }
+          : {}),
+      },
     );
     return this.withEInvoice(order, order);
   }

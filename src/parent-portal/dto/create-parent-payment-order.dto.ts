@@ -60,4 +60,19 @@ export class CreateParentPaymentOrderDto {
   @ValidateNested()
   @Type(() => ParentInvoiceRequestDto)
   invoice?: ParentInvoiceRequestDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Khóa chống tạo đơn trùng do ứng dụng sinh cho mỗi lần bấm thanh toán. Gửi lại cùng giá trị (bấm lại, mạng gửi lại) sẽ nhận lại đúng đơn đã tạo thay vì tạo đơn mới.',
+    example: '4f6c2a1e-8d1b-4e0c-9a57-2b7f0c3d9e11',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'number' ? String(value) : value,
+  )
+  @IsString({ message: 'clientRequestId phải là chuỗi' })
+  @IsNotEmpty({ message: 'clientRequestId không được rỗng' })
+  @MaxLength(100, { message: 'clientRequestId tối đa 100 ký tự' })
+  clientRequestId?: string;
 }

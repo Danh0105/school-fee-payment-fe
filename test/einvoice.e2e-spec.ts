@@ -1670,6 +1670,41 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
       },
     );
 
+    it('clientRequestId: gửi lại cùng khóa nhận lại đúng đơn cũ, khóa khác tạo đơn mới, khóa chỉ có hiệu lực theo từng học sinh', async () => {
+      const parent = await newParent();
+      const other = await newParent();
+      const post = (who: typeof parent, clientRequestId: string) =>
+        api()
+          .post('/parent/payment-orders')
+          .set(auth(who.token))
+          .send({
+            items: [{ receivableId: who.receivableId }],
+            paymentMethod: 'VIETQR',
+            invoice: { email: 'phuhuynh@example.com' },
+            clientRequestId,
+          })
+          .expect(201)
+          .then((res) => (res.body as { data: OrderBody }).data);
+
+      const key = `req-${runId}-${seq}`;
+      const [first, retry] = await Promise.all([
+        post(parent, key),
+        post(parent, key),
+      ]);
+      const again = await post(parent, key);
+      expect(retry.id).toBe(first.id);
+      expect(again.id).toBe(first.id);
+      expect(again.eInvoice).toMatchObject({ status: 'PENDING_PAYMENT' });
+      expect(await orders.countBy({ studentId: parent.student.id })).toBe(1);
+
+      const second = await post(parent, `${key}-2`);
+      expect(second.id).not.toBe(first.id);
+      expect(await orders.countBy({ studentId: parent.student.id })).toBe(2);
+
+      const otherOrder = await post(other, key);
+      expect(otherOrder.id).not.toBe(first.id);
+    });
+
     it('phụ huynh không đọc được đơn/hóa đơn, không dùng được khoản nợ của học sinh khác', async () => {
       const owner = await newParent();
       const other = await newParent();

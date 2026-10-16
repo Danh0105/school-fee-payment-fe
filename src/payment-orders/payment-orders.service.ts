@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  QueryFailedError,
+  Repository,
+} from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import Decimal from 'decimal.js';
 import { PaymentOrder } from './entities/payment-order.entity';
@@ -21,6 +26,12 @@ import {
   ReceivableStatus,
 } from '../common/enums/status.enum';
 
+interface CreateOrderOptions {
+  invoiceEmail?: string | null;
+  /** Idempotency key chosen by the client, unique per student. */
+  clientRequestId?: string | null;
+}
+
 @Injectable()
 export class PaymentOrdersService {
   constructor(
@@ -35,10 +46,48 @@ export class PaymentOrdersService {
     private readonly config: ConfigService,
   ) {}
 
+  /**
+   * With a clientRequestId, a client retrying the same request (double tap,
+   * flaky network) gets the order it already created instead of a second
+   * one; the unique index settles two retries racing each other.
+   */
   async create(
     dto: CreatePaymentOrderDto,
     userId?: string,
-    options: { invoiceEmail?: string | null } = {},
+    options: CreateOrderOptions = {},
+  ): Promise<PaymentOrder> {
+    const key = options.clientRequestId;
+    if (!key) return this.createNew(dto, userId, options);
+    const existing = await this.findByClientRequestId(dto.studentId, key);
+    if (existing) return existing;
+    try {
+      return await this.createNew(dto, userId, options);
+    } catch (error) {
+      const raced =
+        error instanceof QueryFailedError &&
+        (error.driverError as { code?: string }).code === '23505'
+          ? await this.findByClientRequestId(dto.studentId, key)
+          : null;
+      if (raced) return raced;
+      throw error;
+    }
+  }
+
+  private async findByClientRequestId(
+    studentId: string,
+    clientRequestId: string,
+  ): Promise<PaymentOrder | null> {
+    const order = await this.repo.findOne({
+      where: { studentId, clientRequestId },
+      select: { id: true },
+    });
+    return order ? this.findById(order.id) : null;
+  }
+
+  private async createNew(
+    dto: CreatePaymentOrderDto,
+    userId: string | undefined,
+    options: CreateOrderOptions,
   ): Promise<PaymentOrder> {
     const student = await this.studentsService.findById(dto.studentId);
     const school = await this.schoolsService.findById(student.schoolId);
@@ -163,6 +212,7 @@ export class PaymentOrdersService {
         expiresAt,
         createdBy: userId ?? null,
         invoiceEmail: options.invoiceEmail ?? null,
+        clientRequestId: options.clientRequestId ?? null,
       });
       const savedOrder = await orderRepo.save(order);
 

@@ -18,6 +18,11 @@ import { Student } from '../../students/entities/student.entity';
 import { PaymentOrderItem } from './payment-order-item.entity';
 
 @Entity('payment_orders')
+@Index(
+  'UQ_payment_orders_student_client_request',
+  ['studentId', 'clientRequestId'],
+  { unique: true, where: '"client_request_id" IS NOT NULL' },
+)
 export class PaymentOrder extends BaseEntity {
   @Column({ type: 'uuid' })
   schoolId: string;
@@ -82,6 +87,10 @@ export class PaymentOrder extends BaseEntity {
   /** The parent asked for an e-invoice, sent here once the payment is issued. */
   @Column({ type: 'varchar', length: 255, nullable: true })
   invoiceEmail: string | null;
+
+  /** Idempotency key the parent's app sends; retries return the same order. */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  clientRequestId: string | null;
 
   @OneToMany(() => PaymentOrderItem, (item) => item.paymentOrder)
   items: PaymentOrderItem[];
