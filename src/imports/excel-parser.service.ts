@@ -10,21 +10,92 @@ export interface RawImportRow {
   values: Record<string, string>;
 }
 
+export interface RawSchoolImportInfo {
+  code: string;
+  name: string;
+  address: string;
+  phone: string;
+  taxCode: string;
+  managerInfo: string;
+  salesRepresentative: string;
+  bankName: string;
+  bankCode: string;
+  bankAccountNumber: string;
+  bankAccountName: string;
+  status: string;
+  academicYearName: string;
+  academicYearStartDate: string;
+  academicYearEndDate: string;
+  academicYearStatus: string;
+}
+
+export interface ParsedImportWorkbook {
+  rows: RawImportRow[];
+  schoolInfo: RawSchoolImportInfo | null;
+  /** Text above the header row, e.g. "DANH SÁCH BỔ SUNG LỚP 3A4 TH VÕ THỊ SÁU". */
+  title: string | null;
+}
+
+/** A sheet may start with a title block; the header row is searched for here. */
+const HEADER_SEARCH_ROWS = 10;
+
 const COLUMN_ALIASES: Record<string, string> = {
   'MA HS': 'studentCode',
   'MA DINH DANH': 'identifierCode',
   'MA DINH DANH / CCCD': 'identifierCode',
+  'MA DINH DANH CCCD': 'identifierCode',
   CCCD: 'identifierCode',
   'TEN HS': 'fullName',
+  'HO VA TEN': 'fullName',
+  'NGAY SINH': 'dateOfBirth',
+  'NGAY SINH (DD/MM/YYYY)': 'dateOfBirth',
+  'NGAY/THANG/NAM SINH': 'dateOfBirth',
+  'NGAY THANG NAM SINH': 'dateOfBirth',
+  'GIOI TINH': 'gender',
   'DIA CHI': 'address',
   'SO DT': 'phone',
+  'SO DIEN THOAI': 'phone',
+  'TEN PHU HUYNH': 'parentName',
+  'HO TEN PHU HUYNH': 'parentName',
+  'SDT PHU HUYNH': 'parentPhone',
+  'SO DT PHU HUYNH': 'parentPhone',
+  'SO DIEN THOAI PHU HUYNH': 'parentPhone',
+  'EMAIL PHU HUYNH': 'parentEmail',
+  'TRANG THAI': 'status',
   LOP: 'classCode',
+  'MA LOP': 'classCode',
+  'TEN LOP': 'className',
+  KHOI: 'classGrade',
   'SO LUONG': 'quantity',
   'SO LUONG (THANG)': 'quantity',
   'DON GIA': 'unitPrice',
   'THANH TIEN': 'originalAmount',
+  'SO TIEN': 'originalAmount',
+  'SO TIEN (VND)': 'originalAmount',
   'NOI DUNG CHUYEN KHOAN': 'legacyTransferContent',
+  'NOI DUNG': 'legacyTransferContent',
+  'NOI DUNG THANH TOAN': 'legacyTransferContent',
   'TEN HANG HOA DICH VU': 'serviceName',
+};
+
+const SCHOOL_COLUMN_ALIASES: Record<string, keyof RawSchoolImportInfo> = {
+  'MA TRUONG': 'code',
+  'TEN TRUONG': 'name',
+  'DIA CHI TRUONG': 'address',
+  'SDT TRUONG': 'phone',
+  'SO DIEN THOAI TRUONG': 'phone',
+  'MA SO THUE': 'taxCode',
+  'NGUOI QUAN LY': 'managerInfo',
+  'KINH DOANH PHU TRACH': 'salesRepresentative',
+  'TEN NGAN HANG': 'bankName',
+  'MA NGAN HANG': 'bankCode',
+  'SO TAI KHOAN': 'bankAccountNumber',
+  'TEN CHU TAI KHOAN': 'bankAccountName',
+  'TRANG THAI TRUONG': 'status',
+  'NAM HOC': 'academicYearName',
+  'NGAY BAT DAU': 'academicYearStartDate',
+  'NGAY KET THUC': 'academicYearEndDate',
+  'TRANG THAI NAM HOC': 'academicYearStatus',
 };
 
 function stripDiacritics(value: string): string {
@@ -37,13 +108,31 @@ function stripDiacritics(value: string): string {
 }
 
 function normalizeHeader(header: string): string | null {
-  const key = stripDiacritics(header);
+  // Headers wrap inside their cells ("NGÀY/THÁNG/NĂ\nM SINH"): drop line
+  // breaks inside words, collapse other spacing, tighten around slashes.
+  const key = stripDiacritics(header)
+    .replace(/(\p{L})\s*\n\s*(\p{L})/gu, '$1$2')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\/\s*/g, '/');
   return COLUMN_ALIASES[key] ?? null;
+}
+
+/** "DANH SÁCH BỔ SUNG LỚP 3A4 TH VÕ THỊ SÁU" → "3A4". */
+function classFromTitle(title: string | null): string | null {
+  const match = title?.match(/\bL[OỚ]P\s+([0-9A-Za-z][0-9A-Za-z.\-/]*)/iu);
+  return match ? match[1].toUpperCase() : null;
 }
 
 @Injectable()
 export class ExcelParserService {
-  async parse(buffer: Buffer): Promise<RawImportRow[]> {
+  async parse(buffer: Buffer, sheetName?: string): Promise<RawImportRow[]> {
+    return (await this.parseWorkbook(buffer, sheetName)).rows;
+  }
+
+  async parseWorkbook(
+    buffer: Buffer,
+    sheetName?: string,
+  ): Promise<ParsedImportWorkbook> {
     const workbook = new ExcelJS.Workbook();
     try {
       await workbook.xlsx.load(buffer as never);
@@ -54,20 +143,37 @@ export class ExcelParserService {
       );
     }
 
-    const worksheet = workbook.worksheets[0];
+    const requestedSheetName = sheetName?.trim();
+    const worksheet = requestedSheetName
+      ? workbook.getWorksheet(requestedSheetName)
+      : (workbook.getWorksheet('Dữ liệu import') ?? workbook.worksheets[0]);
     if (!worksheet) {
       throw AppException.badRequest(
         ErrorCode.VALIDATION_ERROR,
-        'File Excel không có sheet dữ liệu',
+        requestedSheetName
+          ? `Không tìm thấy sheet “${requestedSheetName}” trong file Excel`
+          : 'File Excel không có sheet dữ liệu',
       );
     }
 
-    const headerRow = worksheet.getRow(1);
-    const columnMap = new Map<number, string>();
-    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      const field = normalizeHeader(toSafeString(cell.value));
-      if (field) columnMap.set(colNumber, field);
-    });
+    let headerRowNumber = 1;
+    let columnMap = new Map<number, string>();
+    const lastSearchedRow = Math.min(HEADER_SEARCH_ROWS, worksheet.rowCount);
+    for (let rowNumber = 1; rowNumber <= lastSearchedRow; rowNumber += 1) {
+      const candidate = new Map<number, string>();
+      worksheet
+        .getRow(rowNumber)
+        .eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          const field = normalizeHeader(this.cellText(cell.value));
+          if (field) candidate.set(colNumber, field);
+        });
+      if (candidate.size > columnMap.size) {
+        columnMap = candidate;
+        headerRowNumber = rowNumber;
+      }
+    }
+    const title = this.titleAbove(worksheet, headerRowNumber);
+    const titleClass = classFromTitle(title);
 
     if (columnMap.size === 0) {
       throw AppException.badRequest(
@@ -78,34 +184,126 @@ export class ExcelParserService {
 
     const rows: RawImportRow[] = [];
     worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return;
+      if (rowNumber <= headerRowNumber) return;
 
       const values: Record<string, string> = {};
       let hasAnyValue = false;
       columnMap.forEach((field, colNumber) => {
         const cell = row.getCell(colNumber);
         const raw = cell.value;
-        let text = '';
-        if (raw !== null && raw !== undefined) {
-          const rawUnknown = raw as unknown as Record<string, unknown>;
-          if (typeof raw === 'object' && 'text' in rawUnknown) {
-            text = toSafeString(rawUnknown.text);
-          } else if (typeof raw === 'object' && 'result' in rawUnknown) {
-            text = toSafeString(rawUnknown.result);
-          } else {
-            text = toSafeString(raw);
-          }
-        }
-        text = text.trim();
+        const text = this.cellText(raw).trim();
         if (text) hasAnyValue = true;
         values[field] = text;
       });
+
+      // A list titled "... LỚP 3A4 ..." names its class in the title.
+      if (!values.classCode && !values.className && titleClass) {
+        values.classCode = titleClass;
+        values.className = titleClass;
+      }
+
+      // Legacy workbooks commonly use one worksheet per class (for example
+      // "3A4") and omit a repeated class column from every student row.
+      if (
+        !values.classCode &&
+        !values.className &&
+        !['Dữ liệu import', 'Thông tin trường', 'Hướng dẫn'].includes(
+          worksheet.name,
+        )
+      ) {
+        values.classCode = worksheet.name.trim();
+        values.className = worksheet.name.trim();
+      }
 
       if (hasAnyValue) {
         rows.push({ sheet: worksheet.name, rowNumber, values });
       }
     });
 
-    return rows;
+    return {
+      rows,
+      schoolInfo: this.parseSchoolInfo(workbook),
+      title,
+    };
+  }
+
+  /** First non-empty cell text above the header row (the list's title). */
+  private titleAbove(
+    worksheet: ExcelJS.Worksheet,
+    headerRowNumber: number,
+  ): string | null {
+    for (let rowNumber = 1; rowNumber < headerRowNumber; rowNumber += 1) {
+      let found: string | null = null;
+      worksheet.getRow(rowNumber).eachCell({ includeEmpty: false }, (cell) => {
+        const text = this.cellText(cell.value).replace(/\s+/g, ' ').trim();
+        if (!found && text) found = text;
+      });
+      if (found) return found;
+    }
+    return null;
+  }
+
+  private parseSchoolInfo(
+    workbook: ExcelJS.Workbook,
+  ): RawSchoolImportInfo | null {
+    const worksheet = workbook.getWorksheet('Thông tin trường');
+    if (!worksheet) return null;
+
+    const columnMap = new Map<number, keyof RawSchoolImportInfo>();
+    worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      const key = stripDiacritics(toSafeString(cell.value));
+      const field = SCHOOL_COLUMN_ALIASES[key];
+      if (field) columnMap.set(colNumber, field);
+    });
+    if (columnMap.size === 0) return null;
+
+    const result = {
+      code: '',
+      name: '',
+      address: '',
+      phone: '',
+      taxCode: '',
+      managerInfo: '',
+      salesRepresentative: '',
+      bankName: '',
+      bankCode: '',
+      bankAccountNumber: '',
+      bankAccountName: '',
+      status: '',
+      academicYearName: '',
+      academicYearStartDate: '',
+      academicYearEndDate: '',
+      academicYearStatus: '',
+    } satisfies RawSchoolImportInfo;
+
+    const row = worksheet.getRow(2);
+    columnMap.forEach((field, colNumber) => {
+      result[field] = this.cellText(row.getCell(colNumber).value).trim();
+    });
+    return Object.values(result).some(Boolean) ? result : null;
+  }
+
+  private cellText(raw: ExcelJS.CellValue): string {
+    if (raw === null || raw === undefined) return '';
+    const rawUnknown = raw as unknown as Record<string, unknown>;
+    if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+      return [
+        raw.getUTCFullYear(),
+        String(raw.getUTCMonth() + 1).padStart(2, '0'),
+        String(raw.getUTCDate()).padStart(2, '0'),
+      ].join('-');
+    }
+    if (typeof raw === 'object' && Array.isArray(rawUnknown.richText)) {
+      return (rawUnknown.richText as { text?: unknown }[])
+        .map((part) => toSafeString(part.text))
+        .join('');
+    }
+    if (typeof raw === 'object' && 'text' in rawUnknown) {
+      return toSafeString(rawUnknown.text);
+    }
+    if (typeof raw === 'object' && 'result' in rawUnknown) {
+      return toSafeString(rawUnknown.result);
+    }
+    return toSafeString(raw);
   }
 }

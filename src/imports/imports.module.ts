@@ -8,10 +8,17 @@ import { ImportsService } from './imports.service';
 import { ImportsController } from './imports.controller';
 import { ExcelParserService } from './excel-parser.service';
 import { ImportValidationService } from './import-validation.service';
+import { ImportTemplateService } from './import-template.service';
 import { StudentsModule } from '../students/students.module';
 import { StudentClassesModule } from '../student-classes/student-classes.module';
 import { ReceivablesModule } from '../receivables/receivables.module';
 import { FeePlansModule } from '../fee-plans/fee-plans.module';
+import { School } from '../schools/entities/school.entity';
+import { AcademicYear } from '../academic-years/entities/academic-year.entity';
+import { SemestersModule } from '../semesters/semesters.module';
+import { ImportPaymentQrPdfService } from './import-payment-qr-pdf.service';
+import { ImportPaymentOrdersService } from './import-payment-orders.service';
+import { PaymentOrder } from '../payment-orders/entities/payment-order.entity';
 
 @Module({
   imports: [
@@ -20,13 +27,24 @@ import { FeePlansModule } from '../fee-plans/fee-plans.module';
       Class,
       Student,
       StudentReceivable,
+      School,
+      AcademicYear,
+      PaymentOrder,
     ]),
     StudentsModule,
     StudentClassesModule,
     ReceivablesModule,
     FeePlansModule,
+    SemestersModule,
   ],
-  providers: [ImportsService, ExcelParserService, ImportValidationService],
+  providers: [
+    ImportsService,
+    ExcelParserService,
+    ImportValidationService,
+    ImportTemplateService,
+    ImportPaymentQrPdfService,
+    ImportPaymentOrdersService,
+  ],
   controllers: [ImportsController],
   exports: [ImportsService],
 })

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { FindOptionsWhere, In, Repository } from 'typeorm';
 import Decimal from 'decimal.js';
 import { RawImportRow } from './excel-parser.service';
 import {
@@ -11,16 +11,93 @@ import {
 import { Class } from '../classes/entities/class.entity';
 import { Student } from '../students/entities/student.entity';
 import { StudentReceivable } from '../receivables/entities/student-receivable.entity';
+import { isEmail } from 'class-validator';
+import { StudentStatus } from '../common/enums/status.enum';
+import { Gender } from '../students/entities/student.entity';
 
 export interface ValidateParams {
   type: ImportSessionType;
   schoolId: string;
   feePlanId?: string;
+  allowCreateClasses?: boolean;
+  /**
+   * Payment list saved for debt clearing: each row needs an amount, and a
+   * student already in the school with the row's identifier code is the
+   * same student rather than a conflict.
+   */
+  paymentList?: boolean;
 }
 
 export interface ValidationResult {
   validRows: ParsedImportRow[];
   errors: ImportRowError[];
+}
+
+function normalizeDate(value: string): string | null {
+  const input = value.trim();
+  if (!input) return null;
+
+  let year: number;
+  let month: number;
+  let day: number;
+  let match = input.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:T.*)?$/);
+  if (match) {
+    year = Number(match[1]);
+    month = Number(match[2]);
+    day = Number(match[3]);
+  } else {
+    match = input.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (!match) return null;
+    day = Number(match[1]);
+    month = Number(match[2]);
+    year = Number(match[3]);
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function parseVndAmount(value: string): Decimal | null {
+  const normalized = value.replace(/[.,\s]/g, '');
+  if (!/^\d+$/.test(normalized)) return null;
+  const amount = new Decimal(normalized);
+  return amount.gt(0) ? amount : null;
+}
+
+const GENDER_VALUES: Record<string, Gender> = {
+  NAM: Gender.MALE,
+  MALE: Gender.MALE,
+  NU: Gender.FEMALE,
+  FEMALE: Gender.FEMALE,
+  KHAC: Gender.OTHER,
+  OTHER: Gender.OTHER,
+};
+
+const STATUS_VALUES: Record<string, StudentStatus> = {
+  ACTIVE: StudentStatus.ACTIVE,
+  'DANG HOC': StudentStatus.ACTIVE,
+  INACTIVE: StudentStatus.INACTIVE,
+  'NGUNG HOC': StudentStatus.INACTIVE,
+  GRADUATED: StudentStatus.GRADUATED,
+  'DA TOT NGHIEP': StudentStatus.GRADUATED,
+  TRANSFERRED: StudentStatus.TRANSFERRED,
+  'DA CHUYEN TRUONG': StudentStatus.TRANSFERRED,
+};
+
+function normalizeOption(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .toUpperCase()
+    .trim();
 }
 
 @Injectable()
@@ -45,16 +122,44 @@ export class ImportValidationService {
     const classCodes = [
       ...new Set(rows.map((r) => r.values.classCode).filter(Boolean)),
     ];
-    const classes = classCodes.length
-      ? await this.classRepository.find({
-          where: {
-            schoolId: params.schoolId,
-            academicYearId,
-            code: In(classCodes),
-          },
-        })
+    const classNames = [
+      ...new Set(rows.map((r) => r.values.className).filter(Boolean)),
+    ];
+    const classWhere: FindOptionsWhere<Class>[] = params.allowCreateClasses
+      ? classNames.length
+        ? [
+            {
+              schoolId: params.schoolId,
+              academicYearId,
+              name: In(classNames),
+            },
+          ]
+        : []
+      : [
+          ...(classCodes.length
+            ? [
+                {
+                  schoolId: params.schoolId,
+                  academicYearId,
+                  code: In(classCodes),
+                },
+              ]
+            : []),
+          ...(classNames.length
+            ? [
+                {
+                  schoolId: params.schoolId,
+                  academicYearId,
+                  name: In(classNames),
+                },
+              ]
+            : []),
+        ];
+    const classes = classWhere.length
+      ? await this.classRepository.find({ where: classWhere })
       : [];
     const classByCode = new Map(classes.map((c) => [c.code, c]));
+    const classByName = new Map(classes.map((c) => [c.name, c]));
 
     const studentCodes = [
       ...new Set(rows.map((r) => r.values.studentCode).filter(Boolean)),
@@ -103,6 +208,10 @@ export class ImportValidationService {
 
     const seenStudentCodes = new Set<string>();
     const seenIdentifierCodes = new Set<string>();
+    const classDefinitions = new Map<
+      string,
+      { name: string; grade: string | null }
+    >();
 
     const addError = (
       row: RawImportRow,
@@ -131,22 +240,112 @@ export class ImportValidationService {
         rowHasError = true;
       }
 
-      const classCode = v.classCode?.trim();
+      const dateOfBirthRaw = v.dateOfBirth?.trim();
+      const dateOfBirth = dateOfBirthRaw ? normalizeDate(dateOfBirthRaw) : null;
+      if (dateOfBirthRaw && !dateOfBirth) {
+        addError(
+          row,
+          'NGÀY SINH',
+          'dateOfBirth',
+          dateOfBirthRaw,
+          'Ngày sinh không hợp lệ; dùng DD/MM/YYYY hoặc YYYY-MM-DD',
+        );
+        rowHasError = true;
+      }
+
+      const genderRaw = v.gender?.trim();
+      const gender = genderRaw
+        ? GENDER_VALUES[normalizeOption(genderRaw)]
+        : null;
+      if (genderRaw && !gender) {
+        addError(
+          row,
+          'GIỚI TÍNH',
+          'gender',
+          genderRaw,
+          'Giới tính không hợp lệ; dùng Nam, Nữ hoặc Khác',
+        );
+        rowHasError = true;
+      }
+
+      const parentEmail = v.parentEmail?.trim() || null;
+      if (parentEmail && !isEmail(parentEmail)) {
+        addError(
+          row,
+          'EMAIL PHỤ HUYNH',
+          'parentEmail',
+          parentEmail,
+          'Email phụ huynh không hợp lệ',
+        );
+        rowHasError = true;
+      }
+
+      const statusRaw = v.status?.trim();
+      const status = statusRaw
+        ? STATUS_VALUES[normalizeOption(statusRaw)]
+        : StudentStatus.ACTIVE;
+      if (statusRaw && !status) {
+        addError(
+          row,
+          'TRẠNG THÁI',
+          'status',
+          statusRaw,
+          'Trạng thái không hợp lệ; dùng Đang học, Ngừng học, Đã tốt nghiệp hoặc Đã chuyển trường',
+        );
+        rowHasError = true;
+      }
+
+      const suppliedClassCode = v.classCode?.trim();
+      const suppliedClassName = v.className?.trim();
+      const className = params.allowCreateClasses
+        ? suppliedClassName
+        : suppliedClassName || suppliedClassCode;
+      const classGrade = v.classGrade?.trim() || null;
       let matchedClass: Class | undefined;
-      if (!classCode) {
+      if (params.allowCreateClasses && !className) {
+        addError(row, 'TÊN LỚP', 'className', v.className, 'Thiếu tên lớp');
+        rowHasError = true;
+      } else if (!params.allowCreateClasses && !suppliedClassCode) {
         addError(row, 'LỚP', 'classCode', v.classCode, 'Thiếu mã lớp');
         rowHasError = true;
       } else {
-        matchedClass = classByCode.get(classCode);
-        if (!matchedClass) {
+        matchedClass = params.allowCreateClasses
+          ? classByName.get(className)
+          : (classByCode.get(suppliedClassCode) ??
+            classByName.get(suppliedClassName || suppliedClassCode));
+        if (!matchedClass && !params.allowCreateClasses) {
           addError(
             row,
             'LỚP',
             'classCode',
-            classCode,
-            `Lớp "${classCode}" không tồn tại trong năm học này`,
+            suppliedClassCode,
+            `Lớp "${suppliedClassCode}" không tồn tại trong năm học này`,
           );
           rowHasError = true;
+        }
+
+        const classKey = params.allowCreateClasses
+          ? className
+          : suppliedClassCode;
+        const previousDefinition = classDefinitions.get(classKey);
+        if (
+          previousDefinition &&
+          (previousDefinition.name !== className ||
+            previousDefinition.grade !== classGrade)
+        ) {
+          addError(
+            row,
+            params.allowCreateClasses ? 'TÊN LỚP' : 'MÃ LỚP',
+            params.allowCreateClasses ? 'className' : 'classCode',
+            classKey,
+            `Lớp "${classKey}" có thông tin không thống nhất trong file`,
+          );
+          rowHasError = true;
+        } else if (!previousDefinition) {
+          classDefinitions.set(classKey, {
+            name: className,
+            grade: classGrade,
+          });
         }
       }
 
@@ -181,7 +380,12 @@ export class ImportValidationService {
 
         const studentCodeForRow = v.studentCode?.trim() || null;
         const conflicting = studentByIdentifierCode.get(identifierCode);
-        if (conflicting && conflicting.studentCode !== studentCodeForRow) {
+        const sameStudent = params.paymentList && !studentCodeForRow;
+        if (
+          conflicting &&
+          !sameStudent &&
+          conflicting.studentCode !== studentCodeForRow
+        ) {
           addError(
             row,
             'MÃ ĐỊNH DANH',
@@ -212,7 +416,34 @@ export class ImportValidationService {
       let unitPrice = new Decimal(0);
       let originalAmount = new Decimal(0);
 
-      if (params.type !== ImportSessionType.STUDENTS) {
+      if (params.type === ImportSessionType.STUDENTS) {
+        const importedAmount = v.originalAmount?.trim();
+        if (!importedAmount && params.paymentList) {
+          addError(
+            row,
+            'SỐ TIỀN',
+            'originalAmount',
+            v.originalAmount,
+            'Thiếu số tiền cần thu',
+          );
+          rowHasError = true;
+        }
+        if (importedAmount) {
+          const parsedAmount = parseVndAmount(importedAmount);
+          if (!parsedAmount) {
+            addError(
+              row,
+              'SỐ TIỀN (VND)',
+              'originalAmount',
+              importedAmount,
+              'Số tiền thanh toán phải là số nguyên dương',
+            );
+            rowHasError = true;
+          } else {
+            originalAmount = parsedAmount;
+          }
+        }
+      } else {
         const quantityRaw = v.quantity?.trim();
         if (
           !quantityRaw ||
@@ -281,9 +512,17 @@ export class ImportValidationService {
           studentCode,
           identifierCode,
           fullName: fullName,
+          dateOfBirth,
+          gender,
           address: v.address?.trim() || null,
           phone: v.phone?.trim() || null,
-          classCode: classCode,
+          parentName: v.parentName?.trim() || null,
+          parentPhone: v.parentPhone?.trim() || null,
+          parentEmail,
+          status: status ?? StudentStatus.ACTIVE,
+          classCode: matchedClass?.code ?? suppliedClassCode ?? className,
+          className,
+          classGrade,
           quantity: quantity.toFixed(2),
           unitPrice: unitPrice.toFixed(2),
           originalAmount: originalAmount.toFixed(2),
