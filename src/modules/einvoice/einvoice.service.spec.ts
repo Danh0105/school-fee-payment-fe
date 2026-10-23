@@ -454,6 +454,9 @@ describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
     issueMode?: EInvoiceIssueMode;
     orderEmail?: string | null;
     invoices?: Partial<EInvoice>[];
+    /** null: the school never saved e-invoice settings. */
+    config?: Partial<EInvoiceConfig> | null;
+    seller?: { taxCode: string; templateCode: string; series: string };
   }) {
     const queryBuilder = {
       insert: jest.fn().mockReturnThis(),
@@ -461,11 +464,9 @@ describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
       orIgnore: jest.fn().mockReturnThis(),
       execute: jest.fn().mockResolvedValue({ identifiers: [] }),
     };
-    const repositories = new Map<unknown, unknown>([
-      [
-        EInvoiceConfig,
-        {
-          findOne: jest.fn().mockResolvedValue({
+    let savedConfig: Partial<EInvoiceConfig> | null =
+      options.config === undefined
+        ? {
             enabled: true,
             autoIssue: true,
             issueMode: options.issueMode ?? EInvoiceIssueMode.ISSUE,
@@ -473,7 +474,26 @@ describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
             supplierTaxCode: '0101',
             templateCode: 'T',
             invoiceSeries: 'C26TAA',
-          }),
+          }
+        : options.config;
+    const configBuilder: Record<
+      'insert' | 'values' | 'orIgnore' | 'execute',
+      jest.Mock
+    > = {
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn((values: Partial<EInvoiceConfig>) => {
+        savedConfig = values;
+        return configBuilder;
+      }),
+      orIgnore: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ identifiers: [] }),
+    };
+    const repositories = new Map<unknown, unknown>([
+      [
+        EInvoiceConfig,
+        {
+          findOne: jest.fn(() => Promise.resolve(savedConfig)),
+          createQueryBuilder: jest.fn().mockReturnValue(configBuilder),
         },
       ],
       [
@@ -517,10 +537,15 @@ describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
         viettelSinvoice: {
           enabled: true,
           autoIssue: options.autoIssue ?? true,
+          ...(options.seller ?? {
+            taxCode: '0316660845',
+            templateCode: '1/001',
+            series: 'C26TIS',
+          }),
         },
       }),
     );
-    return { service, queryBuilder, manager, invoices };
+    return { service, queryBuilder, configBuilder, manager, invoices };
   }
 
   const input = {
@@ -567,6 +592,61 @@ describe('EInvoiceService yêu cầu hóa đơn của phụ huynh', () => {
 
     expect(invoice?.status).toBe(EInvoiceStatus.PENDING);
     expect(queryBuilder.values).toHaveBeenCalledTimes(1);
+  });
+
+  it('trường chưa cấu hình hóa đơn: gạch nợ tự tạo cấu hình nháp mặc định (KCT, MST công ty) và hóa đơn chờ', async () => {
+    const { service, queryBuilder, configBuilder, manager } = build({
+      autoIssue: false,
+      config: null,
+    });
+
+    const invoice = await service.prepareForReceipt(input, manager as never);
+
+    expect(configBuilder.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schoolId: 'school-id',
+        enabled: true,
+        autoIssue: true,
+        issueMode: EInvoiceIssueMode.DRAFT,
+        supplierTaxCode: '0316660845',
+        templateCode: '1/001',
+        invoiceSeries: 'C26TIS',
+        taxPercentage: '-1',
+      }),
+    );
+    expect(configBuilder.orIgnore).toHaveBeenCalled();
+    expect(invoice?.status).toBe(EInvoiceStatus.PENDING);
+    expect(queryBuilder.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        supplierTaxCode: '0316660845',
+        invoiceSeries: 'C26TIS',
+      }),
+    );
+  });
+
+  it('trường đã tắt hóa đơn: không tự bật lại', async () => {
+    const { service, queryBuilder, configBuilder, manager } = build({
+      config: { enabled: false, autoIssue: true },
+    });
+
+    await expect(
+      service.prepareForReceipt(input, manager as never),
+    ).resolves.toBeNull();
+    expect(configBuilder.values).not.toHaveBeenCalled();
+    expect(queryBuilder.values).not.toHaveBeenCalled();
+  });
+
+  it('máy chủ thiếu MST/mẫu/ký hiệu Viettel: không tạo cấu hình mặc định', async () => {
+    const { service, queryBuilder, configBuilder, manager } = build({
+      config: null,
+      seller: { taxCode: '', templateCode: '1/001', series: 'C26TIS' },
+    });
+
+    await expect(
+      service.prepareForReceipt(input, manager as never),
+    ).resolves.toBeNull();
+    expect(configBuilder.values).not.toHaveBeenCalled();
+    expect(queryBuilder.values).not.toHaveBeenCalled();
   });
 
   it('AUTO_ISSUE tắt chặn tự phát hành thật (chế độ phát hành ngay)', async () => {

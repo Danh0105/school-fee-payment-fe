@@ -55,6 +55,9 @@ interface PendingInvoiceInput {
   paymentOrderId: string | null;
 }
 
+/** Viettel's "-1": tuition is not subject to VAT (KCT). */
+const DEFAULT_TAX_PERCENTAGE = '-1';
+
 const AWAITING_PAYMENT = [
   PaymentOrderStatus.PENDING,
   PaymentOrderStatus.PARTIALLY_PAID,
@@ -94,9 +97,7 @@ export class EInvoiceService {
   ): Promise<EInvoice | null> {
     const global = getViettelSinvoiceConfig(this.configService);
     if (!global.enabled) return null;
-    const config = await manager
-      .getRepository(EInvoiceConfig)
-      .findOne({ where: { schoolId: input.schoolId } });
+    const config = await this.schoolConfig(input.schoolId, manager);
     if (!config?.enabled || !config.autoIssue) return null;
     // The system-wide AUTO_ISSUE switch only guards real issuance: a draft
     // is not a tax document until the accountant signs it on the portal.
@@ -152,9 +153,7 @@ export class EInvoiceService {
       if (await repo.exists({ where: { receiptId } })) {
         throw new BadRequestException('Phiếu thu đã có hóa đơn điện tử');
       }
-      const config = await manager
-        .getRepository(EInvoiceConfig)
-        .findOne({ where: { schoolId: receipt.schoolId } });
+      const config = await this.schoolConfig(receipt.schoolId, manager);
       if (!config?.enabled) {
         throw new BadRequestException('Trường chưa bật hóa đơn điện tử');
       }
@@ -196,6 +195,47 @@ export class EInvoiceService {
     });
     await this.enqueueIssue(invoice.id);
     return invoice;
+  }
+
+  /**
+   * The school's e-invoice settings. A school that never set them gets the
+   * system default when its first payment is matched: drafts on the
+   * company's Viettel account (VIETTEL_SINVOICE_TAX_CODE, template, series),
+   * tuition not subject to VAT. A draft is no tax document until the
+   * accountant signs it on the portal, so defaulting to one is safe; a school
+   * that turned invoicing off keeps its row and is left alone.
+   */
+  private async schoolConfig(
+    schoolId: string,
+    manager: EntityManager,
+  ): Promise<EInvoiceConfig | null> {
+    const repo = manager.getRepository(EInvoiceConfig);
+    const existing = await repo.findOne({ where: { schoolId } });
+    if (existing) return existing;
+    const global = getViettelSinvoiceConfig(this.configService);
+    if (!global.taxCode || !global.templateCode || !global.series) return null;
+    await repo
+      .createQueryBuilder()
+      .insert()
+      .values({
+        schoolId,
+        provider: 'VIETTEL',
+        enabled: true,
+        autoIssue: true,
+        issueMode: EInvoiceIssueMode.DRAFT,
+        supplierTaxCode: global.taxCode,
+        templateCode: global.templateCode,
+        invoiceSeries: global.series,
+        currencyCode: 'VND',
+        taxPercentage: DEFAULT_TAX_PERCENTAGE,
+        pricesIncludeTax: null,
+        signingMode: 'HSM',
+        metadata: { source: 'SYSTEM_DEFAULT' },
+      })
+      // Two payments of the same school may race here: one row wins.
+      .orIgnore()
+      .execute();
+    return repo.findOne({ where: { schoolId } });
   }
 
   private async insertPending(

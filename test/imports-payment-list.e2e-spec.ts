@@ -26,6 +26,16 @@ import {
   ViettinbankApiService,
 } from '../src/viettinbank/viettinbank-api.service';
 import { CryptoKeyService } from '../src/viettinbank/crypto-key.service';
+import { EInvoice } from '../src/modules/einvoice/entities/einvoice.entity';
+import { EInvoiceConfig } from '../src/modules/einvoice/entities/einvoice-config.entity';
+import {
+  EInvoiceIssueMode,
+  EInvoiceStatus,
+} from '../src/modules/einvoice/entities/einvoice.enums';
+import {
+  E_INVOICE_PROVIDER,
+  EInvoiceProvider,
+} from '../src/modules/einvoice/providers/einvoice-provider.interface';
 
 jest.setTimeout(60_000);
 
@@ -124,6 +134,9 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
   let students: Repository<Student>;
   let feePlans: Repository<FeePlan>;
   let receipts: Repository<Receipt>;
+  let einvoices: Repository<EInvoice>;
+  let einvoiceConfigs: Repository<EInvoiceConfig>;
+  let createDraft: jest.SpyInstance;
 
   const api = () => request(app.getHttpServer());
   const auth = () => ({ Authorization: `Bearer ${token}` });
@@ -154,13 +167,30 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
       .get(`/imports/${importSessionId}/payment-qr.pdf`)
       .set(auth())
       .buffer(true);
+  /** The order's e-invoice once the queue worker has drafted it on Viettel. */
+  const draftOf = async (paymentOrderId: string) => {
+    for (let i = 0; i < 50; i += 1) {
+      const invoice = await einvoices.findOneBy({ paymentOrderId });
+      if (invoice?.status === EInvoiceStatus.DRAFT) return invoice;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return einvoices.findOneBy({ paymentOrderId });
+  };
 
   beforeAll(async () => {
     Object.assign(process.env, {
       VIETINBANK_ACCOUNT: VAC,
       VIETINBANK_ACCOUNT_NAME: 'CTCP GIAO DUC KHCN ICHI SKILL',
+      // As on production: Viettel on, real issuance off, drafts allowed.
+      VIETTEL_SINVOICE_ENABLED: 'true',
+      VIETTEL_SINVOICE_AUTO_ISSUE: 'false',
+      VIETTEL_SINVOICE_TAX_CODE: '0316660845',
+      VIETTEL_SINVOICE_TEMPLATE_CODE: '1/001',
+      VIETTEL_SINVOICE_SERIES: 'C26TIS',
+      VIETTEL_SINVOICE_BASE_URL: 'http://127.0.0.1:9/api/',
+      VIETTEL_SINVOICE_AUTH_URL: 'http://127.0.0.1:9/auth/login',
     });
-    // Loaded only now so ConfigModule sees the VietinBank settings above.
+    // Loaded only now so ConfigModule sees the settings above.
     const { AppModule } =
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('../src/app.module') as typeof import('../src/app.module');
@@ -205,12 +235,20 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
     const crypto = app.get(CryptoKeyService);
     jest.spyOn(crypto, 'verifyNotify').mockReturnValue('NOTIFY');
     jest.spyOn(crypto, 'sign').mockReturnValue('signed');
+    createDraft = jest
+      .spyOn(
+        app.get<EInvoiceProvider>(E_INVOICE_PROVIDER),
+        'createOrUpdateInvoiceDraft',
+      )
+      .mockResolvedValue({ transactionID: `VT-DRAFT-${runId}` });
 
     orders = app.get(getRepositoryToken(PaymentOrder));
     receivables = app.get(getRepositoryToken(StudentReceivable));
     students = app.get(getRepositoryToken(Student));
     feePlans = app.get(getRepositoryToken(FeePlan));
     receipts = app.get(getRepositoryToken(Receipt));
+    einvoices = app.get(getRepositoryToken(EInvoice));
+    einvoiceConfigs = app.get(getRepositoryToken(EInvoiceConfig));
 
     const school = await app.get(SchoolsService).create({
       code: `VTS${runId}`.toUpperCase(),
@@ -374,7 +412,10 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
     expect(reusable.map((o) => o.expiresAt)).toEqual([null, null]);
   });
 
-  it('VietinBank báo tiền về (notify-bill) → tự gạch nợ, xuất phiếu thu', async () => {
+  it('VietinBank báo tiền về (notify-bill) → tự gạch nợ, xuất phiếu thu và hóa đơn nháp Viettel', async () => {
+    // The school never saved e-invoice settings.
+    expect(await einvoiceConfigs.existsBy({ schoolId })).toBe(false);
+
     const [target] = secondImport.paymentOrders;
     const order = await orders.findOneByOrFail({ id: target.paymentOrderId });
     const res = await api()
@@ -401,6 +442,31 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
       id: paid.items[0].receivableId,
     });
     expect(debt.status).toBe(ReceivableStatus.PAID);
+
+    expect(await einvoiceConfigs.findOneByOrFail({ schoolId })).toMatchObject({
+      enabled: true,
+      autoIssue: true,
+      issueMode: EInvoiceIssueMode.DRAFT,
+      supplierTaxCode: '0316660845',
+      templateCode: '1/001',
+      invoiceSeries: 'C26TIS',
+      metadata: { source: 'SYSTEM_DEFAULT' },
+    });
+    const draft = await draftOf(order.id);
+    expect(draft).toMatchObject({
+      status: EInvoiceStatus.DRAFT,
+      transactionId: `VT-DRAFT-${runId}`,
+      invoiceSeries: 'C26TIS',
+    });
+    expect(draft?.receiptId).toBeTruthy();
+    expect(createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buyerInfo: expect.objectContaining({
+          buyerName: listRows[0].name,
+        }) as unknown,
+      }),
+      '0316660845',
+    );
   });
 
   it('kế toán ghi nhận tay bằng mã đơn trên đơn VietinBank → gạch nợ, xuất phiếu thu', async () => {
@@ -425,6 +491,7 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
     });
     expect(debt.status).toBe(ReceivableStatus.PAID);
     expect(await receipts.countBy({ studentId: order.studentId })).toBe(2);
+    expect((await draftOf(order.id))?.status).toBe(EInvoiceStatus.DRAFT);
   });
 
   it('lỗi: thiếu số tiền ở dòng, ngày hết hạn đã qua', async () => {
