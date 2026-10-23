@@ -84,4 +84,17 @@ export class PreviewImportDto {
     message: 'qrExpiresAt phải là ngày YYYY-MM-DD',
   })
   qrExpiresAt?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Danh sách thu: tên dịch vụ in trên phiếu thu và hóa đơn (hóa đơn tự thêm năm học). Bỏ trống: "Học phí".',
+    example: 'Học phí chương trình Kỹ năng sống',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || undefined : value,
+  )
+  @IsString()
+  @MaxLength(200)
+  serviceName?: string;
 }

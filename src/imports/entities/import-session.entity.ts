@@ -85,6 +85,8 @@ export interface ImportPaymentOptions {
   qrExpiresAt: string | null;
   /** Text above the header row, used as the list's fee plan name. */
   title: string | null;
+  /** What the debts are for, printed on receipts and e-invoices. */
+  serviceName?: string | null;
 }
 
 @Entity('import_sessions')

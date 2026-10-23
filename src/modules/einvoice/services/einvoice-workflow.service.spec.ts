@@ -81,6 +81,7 @@ describe('EInvoiceWorkflowService', () => {
       reconcileQueue as never,
       downloadQueue as never,
       { add: jest.fn() } as never,
+      { findOne: jest.fn().mockResolvedValue(null) } as never,
     );
   });
 

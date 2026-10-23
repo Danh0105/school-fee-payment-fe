@@ -18,6 +18,7 @@ import { E_INVOICE_QUEUES } from './providers/viettel/viettel-sinvoice.constants
 import { ViettelSinvoiceModule } from './providers/viettel/viettel-sinvoice.module';
 import { ViettelSinvoiceService } from './providers/viettel/viettel-sinvoice.service';
 import { EInvoiceWorkflowService } from './services/einvoice-workflow.service';
+import { StudentClass } from '../../student-classes/entities/student-class.entity';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { EInvoiceWorkflowService } from './services/einvoice-workflow.service';
       EInvoiceAttempt,
       EInvoiceFile,
       EInvoiceEvent,
+      StudentClass,
     ]),
     BullModule.registerQueue(
       { name: E_INVOICE_QUEUES.ISSUE },

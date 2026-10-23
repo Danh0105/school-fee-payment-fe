@@ -1,5 +1,8 @@
 import Decimal from 'decimal.js';
-import { PaymentMethod } from '../../../../common/enums/status.enum';
+import {
+  BillingType,
+  PaymentMethod,
+} from '../../../../common/enums/status.enum';
 import { Receipt } from '../../../../receipts/entities/receipt.entity';
 import { Student } from '../../../../students/entities/student.entity';
 import { EInvoice } from '../../entities/einvoice.entity';
@@ -122,5 +125,117 @@ describe('ViettelSinvoiceMapper người mua', () => {
     expect(buyerInfo.buyerIdType).toBeUndefined();
     expect(buyerInfo.buyerIdNo).toBeUndefined();
     expect(buyerInfo.buyerAddressLine).toBeUndefined();
+  });
+});
+
+describe('ViettelSinvoiceMapper theo mẫu hóa đơn của trường', () => {
+  const mapper = new ViettelSinvoiceMapper(new MoneyCalculatorService());
+  const config = {
+    currencyCode: 'VND',
+    taxPercentage: '-1',
+    pricesIncludeTax: null,
+  } as EInvoiceConfig;
+  const invoiceAt = (school: { name: string; address: string | null }) =>
+    ({
+      templateCode: '1/001',
+      invoiceSeries: 'C26TIS',
+      adjustmentType: '1',
+      transactionUuid: '5f8bf423-5002-4dcf-9ca9-16853328eabe',
+      school,
+    }) as unknown as EInvoice;
+  const student = {
+    fullName: 'Bùi Võ Thiên Kim',
+    studentCode: 'HS001',
+    identifierCode: '072318006720',
+    address: null,
+  } as unknown as Student;
+  const receiptOf = (
+    ...items: {
+      description: string;
+      amount: number;
+      receivable?: {
+        academicYear: { name: string };
+        feePlan: { billingType: BillingType };
+        quantity: Decimal;
+      };
+    }[]
+  ) =>
+    ({
+      paymentMethod: PaymentMethod.VIETINBANK,
+      items: items.map((item) => ({
+        receivableId: item.receivable ? 'receivable-id' : null,
+        receivable: item.receivable ?? null,
+        description: item.description,
+        amount: new Decimal(item.amount),
+      })),
+    }) as unknown as Receipt;
+
+  it('học sinh không có địa chỉ nhà: địa chỉ là lớp, trường và địa chỉ trường', () => {
+    const { buyerInfo } = mapper.fromReceipt(
+      invoiceAt({
+        name: 'TH Võ Thị Sáu',
+        address: 'Phường Tân Ninh, Tỉnh Tây Ninh',
+      }),
+      receiptOf({ description: 'Học phí', amount: 560000 }),
+      student,
+      config,
+      '3B5',
+    );
+    expect(buyerInfo.buyerAddressLine).toBe(
+      'Lớp 3B5, Trường TH Võ Thị Sáu, Phường Tân Ninh, Tỉnh Tây Ninh',
+    );
+  });
+
+  it('không lặp chữ "Lớp", "Trường"; trường chưa có địa chỉ thì chỉ lớp và trường', () => {
+    const { buyerInfo } = mapper.fromReceipt(
+      invoiceAt({ name: 'Trường Tiểu học Kim Đồng', address: null }),
+      receiptOf({ description: 'Học phí', amount: 560000 }),
+      student,
+      config,
+      'Lớp 2A1',
+    );
+    expect(buyerInfo.buyerAddressLine).toBe(
+      'Lớp 2A1, Trường Tiểu học Kim Đồng',
+    );
+  });
+
+  it('dòng hàng: dịch vụ + năm học + số tháng, đơn vị "Học sinh", số lượng 1', () => {
+    const { itemInfo } = mapper.fromReceipt(
+      invoiceAt({ name: 'TH Võ Thị Sáu', address: null }),
+      receiptOf(
+        {
+          description: 'Học phí chương trình giáo dục Tiếng Anh',
+          amount: 560000,
+          receivable: {
+            academicYear: { name: '2026-2027' },
+            feePlan: { billingType: BillingType.MONTHLY },
+            quantity: new Decimal('7.00'),
+          },
+        },
+        {
+          description: 'Bán trú năm học 2026-2027',
+          amount: 100000,
+          receivable: {
+            academicYear: { name: '2026-2027' },
+            feePlan: { billingType: BillingType.ONE_TIME },
+            quantity: new Decimal(1),
+          },
+        },
+        { description: 'Tiền thừa (giữ lại số dư có)', amount: 5000 },
+      ),
+      student,
+      config,
+    );
+    expect(itemInfo.map((item) => item.itemName)).toEqual([
+      'Học phí chương trình giáo dục Tiếng Anh năm học 2026-2027 (7 tháng)',
+      'Bán trú năm học 2026-2027',
+      'Tiền thừa (giữ lại số dư có)',
+    ]);
+    expect(itemInfo[0]).toMatchObject({
+      unitName: 'Học sinh',
+      quantity: 1,
+      unitPrice: 560000,
+      itemTotalAmountWithTax: 560000,
+    });
   });
 });

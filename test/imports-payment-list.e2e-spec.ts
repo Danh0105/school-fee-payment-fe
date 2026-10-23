@@ -293,6 +293,7 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
     const res = await preview(await listWorkbook(listRows), {
       createPaymentOrders: 'true',
       qrExpiresAt: expiry,
+      serviceName: 'Học phí chương trình Kỹ năng sống',
     }).expect(201);
     const data = (
       res.body as {
@@ -320,6 +321,7 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
       createPaymentOrders: true,
       qrExpiresAt: expiry,
       title: 'DANH SÁCH BỔ SUNG LỚP 3A4 TH VÕ THỊ SÁU',
+      serviceName: 'Học phí chương trình Kỹ năng sống',
     });
 
     const sessionId = sessionIdOf(res);
@@ -384,6 +386,11 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
     const plan = await feePlans.findOneByOrFail({ id: debts[0].feePlanId });
     expect(plan.name).toBe('DANH SÁCH BỔ SUNG LỚP 3A4 TH VÕ THỊ SÁU');
     expect(debts[1].feePlanId).toBe(plan.id);
+    // Receipts and e-invoices print the service, not the list's title.
+    expect(debts.map((d) => d.description)).toEqual([
+      'Học phí chương trình Kỹ năng sống',
+      'Học phí chương trình Kỹ năng sống',
+    ]);
   });
 
   it('nhập lại danh sách, không thời hạn: đối chiếu học sinh theo mã định danh, không tạo trùng; đơn không hết hạn', async () => {
@@ -463,7 +470,19 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
       expect.objectContaining({
         buyerInfo: expect.objectContaining({
           buyerName: listRows[0].name,
+          buyerIdNo: listRows[0].id,
+          // No home address on the list: class and school, as on the sample.
+          buyerAddressLine: `Lớp 3A4, Trường TH Võ Thị Sáu ${runId}`,
         }) as unknown,
+        // Re-imported without a service name: the default, with the year.
+        itemInfo: [
+          expect.objectContaining({
+            itemName: 'Học phí năm học 2026-2027',
+            unitName: 'Học sinh',
+            quantity: 1,
+            unitPrice: 560000,
+          }),
+        ] as unknown,
       }),
       '0316660845',
     );

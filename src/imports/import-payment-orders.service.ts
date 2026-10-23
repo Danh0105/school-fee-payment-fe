@@ -21,6 +21,9 @@ import { ParsedImportRow } from './entities/import-session.entity';
 /** Category holding the fee plans created for imported payment lists. */
 export const PAYMENT_LIST_FEE_CATEGORY = 'Thu theo danh sách';
 
+/** Service printed on receipts and e-invoices when the import names none. */
+export const PAYMENT_LIST_SERVICE_NAME = 'Học phí';
+
 /**
  * Transfer content of a payment-list row: the list's NỘI DUNG column, else
  * "HV<identifier> <school> Lớp <class> <name>".

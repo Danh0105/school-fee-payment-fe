@@ -30,6 +30,7 @@ import {
 } from '../providers/viettel/viettel-sinvoice.constants';
 import { getViettelSinvoiceConfig } from '../providers/viettel/viettel-sinvoice.config';
 import { ViettelTransactionSearchResult } from '../providers/viettel/responses/viettel.responses';
+import { StudentClass } from '../../../student-classes/entities/student-class.entity';
 
 /** The email the parent registered on the order wins over the student record's. */
 const recipientOf = (invoice: EInvoice): string | null =>
@@ -59,6 +60,8 @@ export class EInvoiceWorkflowService {
     private readonly downloadQueue: Queue,
     @InjectQueue(E_INVOICE_QUEUES.SEND_EMAIL)
     private readonly emailQueue: Queue,
+    @InjectRepository(StudentClass)
+    private readonly studentClasses: Repository<StudentClass>,
   ) {}
 
   async issue(invoiceId: string): Promise<void> {
@@ -114,6 +117,7 @@ export class EInvoiceWorkflowService {
         invoice.receipt,
         invoice.student,
         config,
+        await this.classNameOf(invoice),
       );
       invoice.rawRequest = JSON.parse(JSON.stringify(payload)) as Record<
         string,
@@ -441,8 +445,30 @@ export class EInvoiceWorkflowService {
   private async loadInvoice(id: string): Promise<EInvoice> {
     return this.invoices.findOneOrFail({
       where: { id },
-      relations: { receipt: { items: true }, student: true },
+      relations: {
+        // The debt behind each line gives its school year and months.
+        receipt: {
+          items: { receivable: { academicYear: true, feePlan: true } },
+        },
+        student: true,
+        school: true,
+      },
     });
+  }
+
+  /** The student's class in the invoiced school year, else the latest one. */
+  private async classNameOf(invoice: EInvoice): Promise<string | null> {
+    const academicYearId = invoice.receipt.items.find((item) => item.receivable)
+      ?.receivable?.academicYearId;
+    const link = await this.studentClasses.findOne({
+      where: {
+        studentId: invoice.studentId,
+        ...(academicYearId ? { academicYearId } : {}),
+      },
+      relations: { class: true },
+      order: { joinedAt: 'DESC' },
+    });
+    return link?.class?.name ?? null;
   }
 
   private async markIssuedAndQueueFiles(invoice: EInvoice): Promise<void> {

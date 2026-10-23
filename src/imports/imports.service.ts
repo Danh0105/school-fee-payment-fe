@@ -37,6 +37,7 @@ import { SequenceService } from '../database/sequence.service';
 import { Student } from '../students/entities/student.entity';
 import {
   ImportPaymentOrdersService,
+  PAYMENT_LIST_SERVICE_NAME,
   PreparedOrderQr,
   qrExpiryInstant,
   rowTransferContent,
@@ -238,6 +239,7 @@ export class ImportsService {
         createPaymentOrders: paymentList,
         qrExpiresAt: dto.qrExpiresAt ?? null,
         title: workbook.title,
+        serviceName: paymentList ? (dto.serviceName ?? null) : null,
       },
       status: ImportSessionStatus.PENDING_CONFIRMATION,
       createdBy: actor.id,
@@ -663,7 +665,11 @@ export class ImportsService {
               academicYearId,
               semesterId: null,
               feePlanId: listPlan.id,
-              description: listPlan.name,
+              // The list's title names the fee plan; the debt says what it
+              // is for, since receipts and e-invoices print it.
+              description:
+                session.paymentOptions?.serviceName ||
+                PAYMENT_LIST_SERVICE_NAME,
               quantity: new Decimal(1),
               unitPrice: amount,
               dueDate,
