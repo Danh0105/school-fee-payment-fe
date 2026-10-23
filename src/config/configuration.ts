@@ -63,6 +63,8 @@ export default () => ({
     publicKeyPath: process.env.VIETINBANK_PUBLIC_KEY_PATH ?? '',
     notifyCertPath: process.env.VIETINBANK_NOTIFY_CERT_PATH ?? '',
     clientIp: process.env.VIETINBANK_CLIENT_IP ?? '',
+    /** Account holder printed as "Đơn vị thụ hưởng" on VietinBank QR slips. */
+    accountName: process.env.VIETINBANK_ACCOUNT_NAME ?? '',
     accountOnly: process.env.VIETINBANK_ACCOUNT_ONLY === 'true',
   },
 

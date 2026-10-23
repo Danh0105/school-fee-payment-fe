@@ -16,6 +16,7 @@ import { FeePlansModule } from '../fee-plans/fee-plans.module';
 import { School } from '../schools/entities/school.entity';
 import { AcademicYear } from '../academic-years/entities/academic-year.entity';
 import { SemestersModule } from '../semesters/semesters.module';
+import { PaymentProvidersModule } from '../payment-providers/payment-providers.module';
 import { ImportPaymentQrPdfService } from './import-payment-qr-pdf.service';
 import { ImportPaymentOrdersService } from './import-payment-orders.service';
 import { PaymentOrder } from '../payment-orders/entities/payment-order.entity';
@@ -36,6 +37,7 @@ import { PaymentOrder } from '../payment-orders/entities/payment-order.entity';
     ReceivablesModule,
     FeePlansModule,
     SemestersModule,
+    PaymentProvidersModule,
   ],
   providers: [
     ImportsService,

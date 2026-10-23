@@ -2,9 +2,11 @@ import { ImportsService } from './imports.service';
 import { ImportSessionType } from './entities/import-session.entity';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
+import { Role } from '../common/enums/role.enum';
 
 describe('ImportsService file validation', () => {
   const service = new ImportsService(
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -28,7 +30,7 @@ describe('ImportsService file validation', () => {
   const actor = {
     id: '00000000-0000-4000-8000-000000000003',
     email: 'admin@example.com',
-    role: 'ADMIN' as const,
+    role: Role.ADMIN,
     schoolId: null,
     companyId: null,
   };

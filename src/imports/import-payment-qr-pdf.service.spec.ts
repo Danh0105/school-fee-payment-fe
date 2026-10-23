@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { ImportPaymentQrPdfService } from './import-payment-qr-pdf.service';
 import {
   ImportSession,
@@ -25,9 +26,28 @@ describe('ImportPaymentQrPdfService', () => {
       name: '2026-2027',
     }),
   };
+  const paymentOrderRepository = {
+    find: jest.fn().mockResolvedValue([
+      {
+        id: 'order-1',
+        bankAccountNumber: '2ICS69D261023000001',
+        requestedAmount: new Decimal(560000),
+        transferContent: '261023000001',
+        legacyTransferContent:
+          'HV072318004706 THVTS Lop 3A4 Phan Duong Linh Dan',
+        qrPayload: '00020101021238590010A000000727',
+        expiresAt: null,
+      },
+    ]),
+  };
+  const config = {
+    get: jest.fn().mockReturnValue('CTCP GIAO DUC KHCN ICHI SKILL'),
+  };
   const service = new ImportPaymentQrPdfService(
     schoolRepository as never,
     academicYearRepository as never,
+    paymentOrderRepository as never,
+    config as never,
   );
 
   const row = (
@@ -78,11 +98,48 @@ describe('ImportPaymentQrPdfService', () => {
       status: ImportSessionStatus.PENDING_CONFIRMATION,
       createdBy: 'user-1',
       confirmResult: null,
-    } as ImportSession;
+      paymentOptions: null,
+    } as unknown as ImportSession;
 
     const pdf = await service.create(session);
 
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)).toHaveLength(2);
+  });
+
+  const paymentListSession = (
+    confirmResult: ImportSession['confirmResult'],
+  ): ImportSession =>
+    ({
+      id: 'session-2',
+      schoolId: 'school-1',
+      academicYearId: 'year-1',
+      validRows: [row(2, 'Phan Dương Linh Đan', '2018-09-21', '072318004706')],
+      bootstrapContext: null,
+      confirmResult,
+      paymentOptions: {
+        createPaymentOrders: true,
+        qrExpiresAt: null,
+        title: null,
+      },
+    }) as unknown as ImportSession;
+
+  it('prints a saved payment list from its VietinBank orders', async () => {
+    const pdf = await service.create(
+      paymentListSession({
+        paymentOrders: [
+          { rowNumber: 2, paymentOrderId: 'order-1', orderCode: 'PAY1' },
+        ],
+      }),
+    );
+
+    expect(pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
+    expect(paymentOrderRepository.find).toHaveBeenCalled();
+  });
+
+  it('refuses a payment list that is not saved yet', async () => {
+    await expect(service.create(paymentListSession(null))).rejects.toThrow(
+      'Hãy lưu danh sách trước',
+    );
   });
 });

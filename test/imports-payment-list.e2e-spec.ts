@@ -5,23 +5,31 @@ import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { In, Repository } from 'typeorm';
-import { AppModule } from '../src/app.module';
 import { SchoolsService } from '../src/schools/schools.service';
 import { UsersService } from '../src/users/users.service';
 import { AcademicYearsService } from '../src/academic-years/academic-years.service';
 import { Role } from '../src/common/enums/role.enum';
 import {
   AcademicYearStatus,
+  PaymentMethod,
   PaymentOrderStatus,
   ReceivableStatus,
 } from '../src/common/enums/status.enum';
+import { buildVietQrPayload } from '../src/common/utils/vietqr.util';
 import { PaymentOrder } from '../src/payment-orders/entities/payment-order.entity';
 import { StudentReceivable } from '../src/receivables/entities/student-receivable.entity';
 import { Student } from '../src/students/entities/student.entity';
 import { FeePlan } from '../src/fee-plans/entities/fee-plan.entity';
 import { Receipt } from '../src/receipts/entities/receipt.entity';
+import {
+  GenerateQrInput,
+  ViettinbankApiService,
+} from '../src/viettinbank/viettinbank-api.service';
+import { CryptoKeyService } from '../src/viettinbank/crypto-key.service';
 
 jest.setTimeout(60_000);
+
+const VAC = '2ICS69D';
 
 interface ListRow {
   name: string;
@@ -67,7 +75,20 @@ async function listWorkbook(rows: ListRow[]): Promise<Buffer> {
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () => {
+interface ConfirmBody {
+  classesCreated: number;
+  studentsCreated: number;
+  studentsMatched: number;
+  receivablesCreated: number;
+  paymentOrdersCreated: number;
+  paymentOrders: {
+    rowNumber: number;
+    paymentOrderId: string;
+    orderCode: string;
+  }[];
+}
+
+describe('Import danh sách thu → QR động VietinBank, lưu để gạch nợ (e2e)', () => {
   const runId = Date.now().toString(36);
   const idBase = String(Date.now()).slice(-9);
   const listRows: ListRow[] = [
@@ -94,10 +115,10 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
 
   let app: INestApplication<App>;
   let token: string;
+  /** The school has no bank account: the money goes to the company's. */
   let schoolId: string;
   let academicYearId: string;
-  let noBankSchoolId: string;
-  let noBankYearId: string;
+  let generateQr: jest.SpyInstance;
   let orders: Repository<PaymentOrder>;
   let receivables: Repository<StudentReceivable>;
   let students: Repository<Student>;
@@ -106,50 +127,43 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
 
   const api = () => request(app.getHttpServer());
   const auth = () => ({ Authorization: `Bearer ${token}` });
-  const preview = (
-    file: Buffer,
-    fields: Record<string, string>,
-    target = { schoolId, academicYearId },
-  ) => {
+  const preview = (file: Buffer, fields: Record<string, string>) => {
     const req = api()
       .post('/imports/excel/preview')
       .set(auth())
       .attach('file', file, 'danh-sach-3A4.xlsx')
       .field('type', 'STUDENTS')
-      .field('schoolId', target.schoolId)
-      .field('academicYearId', target.academicYearId);
+      .field('schoolId', schoolId)
+      .field('academicYearId', academicYearId);
     for (const [key, value] of Object.entries(fields)) {
       void req.field(key, value);
     }
     return req;
   };
+  const sessionIdOf = (res: request.Response) =>
+    (res.body as { data: { importSessionId: string } }).data.importSessionId;
   const confirm = (importSessionId: string) =>
     api()
       .post('/imports/excel/confirm')
       .set(auth())
       .send({ importSessionId })
       .expect(201)
-      .then(
-        (res) =>
-          (
-            res.body as {
-              data: {
-                classesCreated: number;
-                studentsCreated: number;
-                studentsMatched: number;
-                receivablesCreated: number;
-                paymentOrdersCreated: number;
-                paymentOrders: {
-                  rowNumber: number;
-                  paymentOrderId: string;
-                  orderCode: string;
-                }[];
-              };
-            }
-          ).data,
-      );
+      .then((res) => (res.body as { data: ConfirmBody }).data);
+  const pdf = (importSessionId: string) =>
+    api()
+      .get(`/imports/${importSessionId}/payment-qr.pdf`)
+      .set(auth())
+      .buffer(true);
 
   beforeAll(async () => {
+    Object.assign(process.env, {
+      VIETINBANK_ACCOUNT: VAC,
+      VIETINBANK_ACCOUNT_NAME: 'CTCP GIAO DUC KHCN ICHI SKILL',
+    });
+    // Loaded only now so ConfigModule sees the VietinBank settings above.
+    const { AppModule } =
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('../src/app.module') as typeof import('../src/app.module');
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -163,40 +177,49 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
       }),
     );
     await app.init();
+
+    // VietinBank's generate-QR answers with the EMV payload of the virtual
+    // account it was asked for.
+    generateQr = jest
+      .spyOn(app.get(ViettinbankApiService), 'generateQr')
+      .mockImplementation((input: GenerateQrInput) =>
+        Promise.resolve({
+          requestId: 'r',
+          providerId: '10080',
+          merchantId: '10080',
+          clientDt: new Date().toISOString(),
+          status: { statusCode: '00' },
+          signature: 'bank-signature',
+          data: {
+            base64QRCode: Buffer.from(
+              buildVietQrPayload({
+                bankBin: '970415',
+                accountNumber: input.accountNumber,
+                amount: String(input.amount),
+                addInfo: input.purposeOfTrans,
+              }),
+            ).toString('base64'),
+          },
+        }),
+      );
+    const crypto = app.get(CryptoKeyService);
+    jest.spyOn(crypto, 'verifyNotify').mockReturnValue('NOTIFY');
+    jest.spyOn(crypto, 'sign').mockReturnValue('signed');
+
     orders = app.get(getRepositoryToken(PaymentOrder));
     receivables = app.get(getRepositoryToken(StudentReceivable));
     students = app.get(getRepositoryToken(Student));
     feePlans = app.get(getRepositoryToken(FeePlan));
     receipts = app.get(getRepositoryToken(Receipt));
 
-    const schools = app.get(SchoolsService);
-    const years = app.get(AcademicYearsService);
-    const school = await schools.create({
+    const school = await app.get(SchoolsService).create({
       code: `VTS${runId}`.toUpperCase(),
       name: `TH Võ Thị Sáu ${runId}`,
-      bankName: 'VietinBank',
-      bankCode: '970415',
-      bankAccountNumber: '118636563979',
-      bankAccountName: 'CTCP GIAO DUC KHCN ICHI SKILL',
     });
     schoolId = school.id;
     academicYearId = (
-      await years.create({
+      await app.get(AcademicYearsService).create({
         schoolId,
-        name: '2026-2027',
-        startDate: '2026-09-01',
-        endDate: '2027-08-31',
-        status: AcademicYearStatus.ACTIVE,
-      })
-    ).id;
-    const noBank = await schools.create({
-      code: `NOB${runId}`.toUpperCase(),
-      name: `Trường chưa có TK ${runId}`,
-    });
-    noBankSchoolId = noBank.id;
-    noBankYearId = (
-      await years.create({
-        schoolId: noBankSchoolId,
         name: '2026-2027',
         startDate: '2026-09-01',
         endDate: '2027-08-31',
@@ -225,9 +248,10 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
     await app?.close();
   });
 
-  let firstImport: Awaited<ReturnType<typeof confirm>>;
+  let firstImport: ConfirmBody;
+  let secondImport: ConfirmBody;
 
-  it('xem trước: đọc tiêu đề, cột ngày sinh xuống dòng, lớp từ tiêu đề, số tiền và nội dung', async () => {
+  it('xem trước file như ảnh; PDF chỉ có sau khi lưu; lưu tạo lớp, học sinh, công nợ, đơn VietinBank (trường không cần tài khoản)', async () => {
     const res = await preview(await listWorkbook(listRows), {
       createPaymentOrders: 'true',
       qrExpiresAt: expiry,
@@ -235,7 +259,6 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
     const data = (
       res.body as {
         data: {
-          importSessionId: string;
           validRows: number;
           errors: unknown[];
           rows: {
@@ -261,7 +284,10 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
       title: 'DANH SÁCH BỔ SUNG LỚP 3A4 TH VÕ THỊ SÁU',
     });
 
-    firstImport = await confirm(data.importSessionId);
+    const sessionId = sessionIdOf(res);
+    await pdf(sessionId).expect(400);
+
+    firstImport = await confirm(sessionId);
     expect(firstImport).toMatchObject({
       classesCreated: 1,
       studentsCreated: 2,
@@ -270,34 +296,39 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
       paymentOrdersCreated: 2,
     });
 
-    const pdf = await api()
-      .get(`/imports/${data.importSessionId}/payment-qr.pdf`)
-      .set(auth())
-      .buffer(true)
-      .expect(200);
-    expect(pdf.headers['content-type']).toContain('application/pdf');
-    expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+    const slips = await pdf(sessionId).expect(200);
+    expect(slips.headers['content-type']).toContain('application/pdf');
+    expect((slips.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
   });
 
-  it('lưu để gạch nợ: công nợ đúng số tiền trong khoản thu riêng, đơn có hạn với QR VietQR vào TK trường', async () => {
+  it('đơn dùng QR động tài khoản ảo VietinBank (tiền về công ty), có hạn; công nợ đúng số tiền trong khoản thu riêng', async () => {
     const saved = await orders.find({
-      where: { id: In(firstImport.paymentOrders.map((o) => o.paymentOrderId)) },
+      where: {
+        id: In(firstImport.paymentOrders.map((o) => o.paymentOrderId)),
+      },
       relations: { items: true },
-      order: { orderCode: 'ASC' },
     });
     expect(saved).toHaveLength(2);
     for (const order of saved) {
-      expect(order.status).toBe(PaymentOrderStatus.PENDING);
-      expect(order.transferContent).toBe(order.orderCode);
+      const vav = order.orderCode.slice(3);
+      expect(order).toMatchObject({
+        status: PaymentOrderStatus.PENDING,
+        paymentMethod: PaymentMethod.VIETINBANK,
+        transferContent: vav,
+        bankAccountNumber: `${VAC}${vav}`,
+      });
       expect(order.requestedAmount.toFixed(0)).toBe('560000');
-      expect(order.bankAccountNumber).toBe('118636563979');
       expect(order.expiresAt?.toISOString()).toBe(
         new Date(`${expiry}T23:59:59+07:00`).toISOString(),
       );
-      // Dynamic VietQR (expiring), account 118636563979 at VietinBank.
-      expect(order.qrPayload).toMatch(/^000201010212/);
-      expect(order.qrPayload).toContain('0006970415' + '0112118636563979');
+      expect(order.qrPayload).toContain(`0119${VAC}${vav}`);
     }
+    expect(generateQr).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountNumber: `${VAC}${saved[0].transferContent}`,
+        amount: 560000,
+      }),
+    );
     expect(saved.map((o) => o.legacyTransferContent).sort()).toEqual(
       [
         `HV071${idBase} THVTS Lop 3A4 Phan Duong Linh Dan`,
@@ -317,14 +348,12 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
     expect(debts[1].feePlanId).toBe(plan.id);
   });
 
-  it('nhập lại danh sách, không thời hạn: đối chiếu học sinh theo mã định danh, không tạo trùng; QR tĩnh, đơn không hết hạn', async () => {
+  it('nhập lại danh sách, không thời hạn: đối chiếu học sinh theo mã định danh, không tạo trùng; đơn không hết hạn', async () => {
     const res = await preview(await listWorkbook(listRows), {
       createPaymentOrders: 'true',
     }).expect(201);
-    const sessionId = (res.body as { data: { importSessionId: string } }).data
-      .importSessionId;
-    const second = await confirm(sessionId);
-    expect(second).toMatchObject({
+    secondImport = await confirm(sessionIdOf(res));
+    expect(secondImport).toMatchObject({
       classesCreated: 0,
       studentsCreated: 0,
       studentsMatched: 2,
@@ -338,21 +367,49 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
       }),
     ).toBe(2);
     const reusable = await orders.find({
-      where: { id: In(second.paymentOrders.map((o) => o.paymentOrderId)) },
+      where: {
+        id: In(secondImport.paymentOrders.map((o) => o.paymentOrderId)),
+      },
     });
-    for (const order of reusable) {
-      expect(order.expiresAt).toBeNull();
-      expect(order.qrPayload).toMatch(/^000201010211/);
-    }
+    expect(reusable.map((o) => o.expiresAt)).toEqual([null, null]);
   });
 
-  it('kế toán ghi nhận tiền về trên đơn → gạch nợ và xuất phiếu thu', async () => {
+  it('VietinBank báo tiền về (notify-bill) → tự gạch nợ, xuất phiếu thu', async () => {
+    const [target] = secondImport.paymentOrders;
+    const order = await orders.findOneByOrFail({ id: target.paymentOrderId });
+    const res = await api()
+      .post('/api/v1/notify-bill')
+      .send({
+        transId: `VTB${runId}`,
+        transTime: '20261023100000',
+        custCode: `${VAC}${order.transferContent}`,
+        amount: '560000',
+        bankTransId: `B${runId}`,
+        remark: 'CT DEN',
+        providerId: '10080',
+        signature: 'bank-signature',
+      })
+      .expect(201);
+    expect((res.body as { errorCode: string }).errorCode).toBe('00');
+
+    const paid = await orders.findOneOrFail({
+      where: { id: order.id },
+      relations: { items: true },
+    });
+    expect(paid.status).toBe(PaymentOrderStatus.PAID);
+    const debt = await receivables.findOneByOrFail({
+      id: paid.items[0].receivableId,
+    });
+    expect(debt.status).toBe(ReceivableStatus.PAID);
+  });
+
+  it('kế toán ghi nhận tay bằng mã đơn trên đơn VietinBank → gạch nợ, xuất phiếu thu', async () => {
     const [target] = firstImport.paymentOrders;
     await api()
       .post('/payment-transactions/manual')
       .set(auth())
       .send({
-        externalTransactionId: `VTB-${runId}`,
+        externalTransactionId: `MAN-${runId}`,
         amount: '560000',
         transferContent: target.orderCode,
         transactionTime: new Date().toISOString(),
@@ -367,10 +424,10 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
       id: order.items[0].receivableId,
     });
     expect(debt.status).toBe(ReceivableStatus.PAID);
-    expect(await receipts.countBy({ studentId: order.studentId })).toBe(1);
+    expect(await receipts.countBy({ studentId: order.studentId })).toBe(2);
   });
 
-  it('lỗi: thiếu số tiền ở dòng, trường chưa có tài khoản, ngày hết hạn đã qua', async () => {
+  it('lỗi: thiếu số tiền ở dòng, ngày hết hạn đã qua', async () => {
     const missingAmount = await preview(
       await listWorkbook([
         { ...listRows[0], id: `073${idBase}`, amount: null },
@@ -382,13 +439,6 @@ describe('Import danh sách thu → PDF QR + lưu để gạch nợ (e2e)', () =
         missingAmount.body as { data: { errors: { message: string }[] } }
       ).data.errors.map((e) => e.message),
     ).toContain('Thiếu số tiền cần thu');
-
-    const noBank = await preview(
-      await listWorkbook(listRows),
-      { createPaymentOrders: 'true' },
-      { schoolId: noBankSchoolId, academicYearId: noBankYearId },
-    ).expect(400);
-    expect(JSON.stringify(noBank.body)).toContain('mã ngân hàng');
 
     await preview(await listWorkbook(listRows), {
       createPaymentOrders: 'true',

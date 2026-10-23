@@ -107,6 +107,7 @@ services:
       VIETINBANK_PUBLIC_KEY_PATH: ${VIETINBANK_PUBLIC_KEY_PATH:-}
       VIETINBANK_NOTIFY_CERT_PATH: ${VIETINBANK_NOTIFY_CERT_PATH:-}
       VIETINBANK_CLIENT_IP: ${VIETINBANK_CLIENT_IP:-}
+      VIETINBANK_ACCOUNT_NAME: ${VIETINBANK_ACCOUNT_NAME:-}
       VIETINBANK_ACCOUNT_ONLY: ${VIETINBANK_ACCOUNT_ONLY:-false}
     # Bound to localhost only — a reverse proxy (nginx/Caddy) on the VPS
     # terminates TLS and forwards to this port. Do not expose 3010

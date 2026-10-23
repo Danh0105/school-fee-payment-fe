@@ -37,9 +37,9 @@ import { SequenceService } from '../database/sequence.service';
 import { Student } from '../students/entities/student.entity';
 import {
   ImportPaymentOrdersService,
+  PreparedOrderQr,
   qrExpiryInstant,
   rowTransferContent,
-  schoolTransferAccount,
 } from './import-payment-orders.service';
 import type { ImportedRowOrder } from './import-payment-qr-pdf.service';
 
@@ -205,14 +205,9 @@ export class ImportsService {
       bootstrapContext = bootstrap.context;
     }
 
-    if (paymentList) {
-      // Fail at preview, not at confirm, when the QR has no account to target.
-      const school =
-        bootstrapContext?.school ??
-        (await this.schoolRepo.findOne({ where: { id: schoolId } }));
-      if (!school) throw AppException.notFound(ErrorCode.SCHOOL_NOT_FOUND);
-      schoolTransferAccount(school);
-    }
+    // Fail at preview, not at confirm, when no dynamic QR can be made.
+    if (paymentList)
+      this.importPaymentOrdersService.assertVietinbankConfigured();
 
     const { validRows, errors } = await this.importValidationService.validate(
       rawRows,
@@ -447,6 +442,25 @@ export class ImportsService {
       ? await this.feePlansService.findById(session.feePlanId)
       : null;
     const paymentList = Boolean(session.paymentOptions?.createPaymentOrders);
+    // VietinBank is called before the transaction opens; see prepareOrderQr.
+    const preparedQrs = new Map<number, PreparedOrderQr>();
+    if (paymentList) {
+      const payee = this.importPaymentOrdersService.beneficiaryName(
+        session.bootstrapContext?.school.name ??
+          (await this.schoolRepo.findOne({ where: { id: session.schoolId } }))
+            ?.name ??
+          '',
+      );
+      for (const row of session.validRows) {
+        preparedQrs.set(
+          row.rowNumber,
+          await this.importPaymentOrdersService.prepareOrderQr(
+            new Decimal(row.originalAmount),
+            payee,
+          ),
+        );
+      }
+    }
 
     return this.dataSource.transaction(async (manager) => {
       let schoolId = session.schoolId;
@@ -665,14 +679,15 @@ export class ImportsService {
           const order = await this.importPaymentOrdersService.createOrderForRow(
             manager,
             {
-              school,
+              schoolId,
               studentId: student.id,
               receivableId: receivable.id,
               amount,
-              transferContent: rowTransferContent(
+              listContent: rowTransferContent(
                 { ...row, studentCode: row.studentCode ?? student.studentCode },
                 school.code,
               ),
+              prepared: preparedQrs.get(row.rowNumber)!,
               expiresAt: qrExpiryInstant(dueDate),
               createdBy: actor.userId,
             },

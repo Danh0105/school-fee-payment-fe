@@ -73,7 +73,12 @@ export class PaymentTransactionsController {
     @CurrentUser() user: AuthUser,
   ) {
     const order = await this.paymentOrderRepo.findOne({
-      where: { transferContent: dto.transferContent.trim() },
+      // The form sends the order code; a VietinBank order's transferContent
+      // is the code without "PAY", so accept either.
+      where: [
+        { transferContent: dto.transferContent.trim() },
+        { orderCode: dto.transferContent.trim() },
+      ],
     });
     if (!order) throw AppException.notFound(ErrorCode.PAYMENT_ORDER_NOT_FOUND);
     await this.accessControlService.assertSchoolAccess(user, order.schoolId);

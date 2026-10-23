@@ -120,7 +120,11 @@ export class PaymentTransactionsService {
 
       const order = parsed.transferContent
         ? await orderRepo.findOne({
-            where: { transferContent: parsed.transferContent.trim() },
+            // An accountant records by order code; banks quote transferContent.
+            where: [
+              { transferContent: parsed.transferContent.trim() },
+              { orderCode: parsed.transferContent.trim() },
+            ],
             relations: { items: true },
           })
         : null;
@@ -238,9 +242,12 @@ export class PaymentTransactionsService {
     manager: EntityManager,
   ): Promise<string> {
     if (parsed.transferContent) {
-      const order = await manager
-        .getRepository(PaymentOrder)
-        .findOne({ where: { transferContent: parsed.transferContent.trim() } });
+      const order = await manager.getRepository(PaymentOrder).findOne({
+        where: [
+          { transferContent: parsed.transferContent.trim() },
+          { orderCode: parsed.transferContent.trim() },
+        ],
+      });
       if (order) return order.schoolId;
     }
     if (parsed.bankAccountNumber) {
