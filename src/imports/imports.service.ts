@@ -668,10 +668,15 @@ export class ImportsService {
               // The list's title names the fee plan; the debt says what it
               // is for, since receipts and e-invoices print it.
               description:
+                row.serviceName ||
                 session.paymentOptions?.serviceName ||
                 PAYMENT_LIST_SERVICE_NAME,
-              quantity: new Decimal(1),
-              unitPrice: amount,
+              invoiceBuyerName: row.buyerName,
+              invoiceBuyerAddress: row.buyerAddress,
+              invoiceBuyerIdNo: row.buyerIdNo,
+              invoiceUnitName: row.unitName || 'Học sinh',
+              quantity: new Decimal(row.quantity),
+              unitPrice: new Decimal(row.unitPrice),
               dueDate,
               createdBy: actor.userId,
             },

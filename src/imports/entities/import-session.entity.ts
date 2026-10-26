@@ -49,6 +49,10 @@ export interface ParsedImportRow {
   originalAmount: string;
   legacyTransferContent: string | null;
   serviceName: string | null;
+  unitName: string | null;
+  buyerName: string | null;
+  buyerAddress: string | null;
+  buyerIdNo: string | null;
 }
 
 export interface ImportBootstrapContext {

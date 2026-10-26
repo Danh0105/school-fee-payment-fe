@@ -121,7 +121,7 @@ describe('ExcelParserService student contact columns', () => {
           dateOfBirth: '21/09/2018',
           parentPhone: '0358228913',
           identifierCode: '072318004706',
-          originalAmount: '560000',
+          paymentAmount: '560000',
           legacyTransferContent:
             'HV072318004706 THVTS Lớp 3A4 Phan Dương Linh Đan',
           classCode: '3A4',
@@ -129,5 +129,103 @@ describe('ExcelParserService student contact columns', () => {
         },
       },
     ]);
+  });
+
+  it('recognizes all eight invoice fields in a collection list', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Tổng hợp');
+    sheet.addRow([
+      'Họ và tên',
+      'Lớp',
+      'Mã định danh',
+      'Số tiền',
+      'Họ tên người mua hàng',
+      'Địa chỉ người mua',
+      'CCCD người mua',
+      'Tên hàng hóa, dịch vụ',
+      'Đơn vị tính',
+      'Số lượng',
+      'Đơn giá',
+      'Thành tiền',
+    ]);
+    sheet.addRow([
+      'Phạm Bảo Lộc',
+      '1A1',
+      '072220003363',
+      560000,
+      'Nguyễn Văn A',
+      'Lớp 1A1, Trường TH Lê Ngọc Hân',
+      '072220003363',
+      'Chương trình AI và STEM năm học 2026-2027 (7 tháng)',
+      'Học sinh',
+      1,
+      560000,
+      560000,
+    ]);
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const [row] = await new ExcelParserService().parse(buffer, 'Tổng hợp');
+
+    expect(row.values).toMatchObject({
+      paymentAmount: '560000',
+      buyerName: 'Nguyễn Văn A',
+      buyerAddress: 'Lớp 1A1, Trường TH Lê Ngọc Hân',
+      buyerIdNo: '072220003363',
+      serviceName: 'Chương trình AI và STEM năm học 2026-2027 (7 tháng)',
+      unitName: 'Học sinh',
+      quantity: '1',
+      unitPrice: '560000',
+      originalAmount: '560000',
+    });
+  });
+
+  it('preserves a leading zero from a numeric identifier display format', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('3A4');
+    sheet.addRow(['Họ và tên', 'Mã định danh', 'Số tiền']);
+    sheet.addRow(['Nguyễn Văn A', 72318004706, 560000]);
+    sheet.getCell('B2').numFmt = '000000000000';
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const [row] = await new ExcelParserService().parse(buffer, '3A4');
+
+    expect(row.values.identifierCode).toBe('072318004706');
+  });
+
+  it('reads the list from a later sheet when the first tab has no headers', async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('Sheet2', { state: 'hidden' });
+    workbook.addWorksheet('Tổng hợp').addRow(['Lớp 1A1', 35]);
+    const sheet = workbook.addWorksheet('DS hóa đơn');
+    sheet.addRow(['TT', 'Họ và tên', 'Lớp', 'Mã định danh', 'Số tiền']);
+    sheet.addRow([1, 'Phạm Bảo Lộc', '1A1', '072220003363', 560000]);
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const rows = await new ExcelParserService().parse(buffer);
+
+    expect(rows).toEqual([
+      {
+        sheet: 'DS hóa đơn',
+        rowNumber: 2,
+        values: {
+          fullName: 'Phạm Bảo Lộc',
+          classCode: '1A1',
+          identifierCode: '072220003363',
+          paymentAmount: '560000',
+        },
+      },
+    ]);
+  });
+
+  it('names the sheets it read when no header is recognized', async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('Sheet1').addRow(['Hä vµ tªn', 'Líp']);
+    workbook.addWorksheet('Hướng dẫn').addRow(['HỌ VÀ TÊN', 'LỚP']);
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    await expect(new ExcelParserService().parse(buffer)).rejects.toThrow(
+      'đã đọc sheet “Sheet1”',
+    );
   });
 });

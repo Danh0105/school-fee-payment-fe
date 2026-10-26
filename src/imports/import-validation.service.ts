@@ -396,6 +396,16 @@ export class ImportValidationService {
           rowHasError = true;
         }
       }
+      if (params.paymentList && !v.buyerIdNo?.trim() && !identifierCode) {
+        addError(
+          row,
+          'CCCD NGƯỜI MUA',
+          'buyerIdNo',
+          v.buyerIdNo,
+          'Thiếu CCCD người mua hoặc mã định danh học sinh',
+        );
+        rowHasError = true;
+      }
 
       if (
         params.type === ImportSessionType.RECEIVABLES &&
@@ -417,7 +427,10 @@ export class ImportValidationService {
       let originalAmount = new Decimal(0);
 
       if (params.type === ImportSessionType.STUDENTS) {
-        const importedAmount = v.originalAmount?.trim();
+        // SỐ TIỀN is what the bank must receive. Older files may only have
+        // THÀNH TIỀN, so keep accepting it as the payment amount fallback.
+        const importedAmount =
+          v.paymentAmount?.trim() || v.originalAmount?.trim();
         if (!importedAmount && params.paymentList) {
           addError(
             row,
@@ -441,6 +454,86 @@ export class ImportValidationService {
             rowHasError = true;
           } else {
             originalAmount = parsedAmount;
+          }
+        }
+
+        if (params.paymentList && originalAmount.gt(0)) {
+          const quantityRaw = v.quantity?.trim();
+          if (quantityRaw) {
+            try {
+              quantity = new Decimal(quantityRaw.replace(',', '.'));
+            } catch {
+              quantity = new Decimal(0);
+            }
+            if (!quantity.isFinite() || quantity.lte(0)) {
+              addError(
+                row,
+                'SỐ LƯỢNG',
+                'quantity',
+                v.quantity,
+                'Số lượng phải là số dương',
+              );
+              rowHasError = true;
+            }
+          } else {
+            quantity = new Decimal(1);
+          }
+
+          const unitPriceRaw = v.unitPrice?.trim();
+          if (unitPriceRaw) {
+            const parsedUnitPrice = parseVndAmount(unitPriceRaw);
+            if (!parsedUnitPrice) {
+              addError(
+                row,
+                'ĐƠN GIÁ',
+                'unitPrice',
+                v.unitPrice,
+                'Đơn giá phải là số nguyên dương',
+              );
+              rowHasError = true;
+            } else {
+              unitPrice = parsedUnitPrice;
+            }
+          } else if (quantity.gt(0)) {
+            unitPrice = originalAmount.div(quantity);
+          }
+
+          const invoiceTotalRaw = v.originalAmount?.trim();
+          const invoiceTotal = invoiceTotalRaw
+            ? parseVndAmount(invoiceTotalRaw)
+            : originalAmount;
+          if (invoiceTotalRaw && !invoiceTotal) {
+            addError(
+              row,
+              'THÀNH TIỀN',
+              'originalAmount',
+              invoiceTotalRaw,
+              'Thành tiền phải là số nguyên dương',
+            );
+            rowHasError = true;
+          } else if (invoiceTotal && !invoiceTotal.equals(originalAmount)) {
+            addError(
+              row,
+              'THÀNH TIỀN',
+              'originalAmount',
+              invoiceTotalRaw,
+              'Thành tiền phải khớp với Số tiền cần thu',
+            );
+            rowHasError = true;
+          }
+          if (
+            quantity.gt(0) &&
+            unitPrice.gt(0) &&
+            !quantity.times(unitPrice).equals(originalAmount)
+          ) {
+            addError(
+              row,
+              'ĐƠN GIÁ',
+              'unitPrice',
+              v.unitPrice,
+              'Số lượng × Đơn giá phải bằng Thành tiền',
+            );
+            rowHasError = true;
           }
         }
       } else {
@@ -528,6 +621,10 @@ export class ImportValidationService {
           originalAmount: originalAmount.toFixed(2),
           legacyTransferContent: v.legacyTransferContent?.trim() || null,
           serviceName: v.serviceName?.trim() || null,
+          unitName: v.unitName?.trim() || null,
+          buyerName: v.buyerName?.trim() || fullName,
+          buyerAddress: v.buyerAddress?.trim() || v.address?.trim() || null,
+          buyerIdNo: v.buyerIdNo?.trim() || identifierCode,
         });
       }
     }

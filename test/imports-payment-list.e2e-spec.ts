@@ -43,18 +43,21 @@ const VAC = '2ICS69D';
 
 interface ListRow {
   name: string;
-  dob: string | Date;
-  phone: string;
   id: string;
   amount: number | null;
   content: string;
 }
 
+const ITEM_NAME =
+  'Chương trình giáo dục Trí tuệ nhân tạo (AI) và STEM ICHI SKILL năm học 2026-2027 (7 tháng)';
+const BUYER_ADDRESS =
+  'Lớp 3A4 Trường TH Lê Ngọc Hân, Phường Bình Minh, Tỉnh Tây Ninh';
+
 /** A workbook laid out like the school's list: title row, header row 2. */
 async function listWorkbook(rows: ListRow[]): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Danh sách');
-  sheet.mergeCells('A1:H1');
+  sheet.mergeCells('A1:N1');
   sheet.getCell('A1').value = {
     richText: [
       { font: { bold: true }, text: 'DANH SÁCH BỔ SUNG LỚP 3A4 TH VÕ THỊ SÁU' },
@@ -63,23 +66,35 @@ async function listWorkbook(rows: ListRow[]): Promise<Buffer> {
   sheet.getRow(2).values = [
     'STT',
     'HỌ VÀ TÊN',
-    'NGÀY/THÁNG/NĂ\nM SINH',
-    'SĐT PHỤ HUYNH',
-    'MÃ ĐỊNH DANH CCCD',
-    'GHI CHÚ',
+    'LỚP',
+    'MÃ ĐỊNH DANH',
     'SỐ TIỀN',
     'NỘI DUNG',
+    'HỌ TÊN NGƯỜI MUA HÀNG',
+    'ĐỊA CHỈ',
+    'CCCD NGƯỜI MUA',
+    'TÊN HÀNG HÓA, DỊCH VỤ',
+    'ĐƠN VỊ TÍNH',
+    'SỐ LƯỢNG',
+    'ĐƠN GIÁ',
+    'THÀNH TIỀN',
   ];
   rows.forEach((row, index) => {
     sheet.getRow(index + 3).values = [
       index + 1,
       row.name,
-      row.dob,
-      row.phone,
+      '3A4',
       row.id,
-      null,
       row.amount,
       row.content,
+      row.name,
+      BUYER_ADDRESS,
+      row.id,
+      ITEM_NAME,
+      'Học sinh',
+      1,
+      row.amount,
+      row.amount,
     ];
   });
   return Buffer.from(await workbook.xlsx.writeBuffer());
@@ -104,16 +119,12 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
   const listRows: ListRow[] = [
     {
       name: 'Phan Dương Linh Đan',
-      dob: '21/09/2018',
-      phone: '0358228913',
       id: `071${idBase}`,
       amount: 560000,
       content: `HV071${idBase} THVTS Lớp 3A4 Phan Dương Linh Đan`,
     },
     {
       name: 'Lê Chấn Hưng',
-      dob: new Date(Date.UTC(2019, 9, 8)),
-      phone: '0918569863',
       id: `072${idBase}`,
       amount: 560000,
       content: `HV072${idBase} THVTS Lớp 3A4 Lê Chấn Hưng`,
@@ -303,7 +314,8 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
           rows: {
             className: string;
             originalAmount: string;
-            dateOfBirth: string;
+            buyerName: string;
+            unitName: string;
           }[];
           paymentOptions: Record<string, unknown>;
         };
@@ -316,7 +328,10 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
       '560000.00',
       '560000.00',
     ]);
-    expect(data.rows[1].dateOfBirth).toBe('2019-10-08');
+    expect(data.rows[0]).toMatchObject({
+      buyerName: listRows[0].name,
+      unitName: 'Học sinh',
+    });
     expect(data.paymentOptions).toEqual({
       createPaymentOrders: true,
       qrExpiresAt: expiry,
@@ -386,10 +401,20 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
     const plan = await feePlans.findOneByOrFail({ id: debts[0].feePlanId });
     expect(plan.name).toBe('DANH SÁCH BỔ SUNG LỚP 3A4 TH VÕ THỊ SÁU');
     expect(debts[1].feePlanId).toBe(plan.id);
-    // Receipts and e-invoices print the service, not the list's title.
-    expect(debts.map((d) => d.description)).toEqual([
-      'Học phí chương trình Kỹ năng sống',
-      'Học phí chương trình Kỹ năng sống',
+    // The row's eight invoice fields win over the generic import option.
+    expect(debts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          description: ITEM_NAME,
+          invoiceBuyerAddress: BUYER_ADDRESS,
+          invoiceUnitName: 'Học sinh',
+        }),
+      ]),
+    );
+    expect(debts.map((d) => d.quantity.toFixed(0))).toEqual(['1', '1']);
+    expect(debts.map((d) => d.unitPrice.toFixed(0))).toEqual([
+      '560000',
+      '560000',
     ]);
   });
 
@@ -471,13 +496,12 @@ describe('Import danh sách thu → QR động VietinBank, lưu để gạch n�
         buyerInfo: expect.objectContaining({
           buyerName: listRows[0].name,
           buyerIdNo: listRows[0].id,
-          // No home address on the list: class and school, as on the sample.
-          buyerAddressLine: `Lớp 3A4, Trường TH Võ Thị Sáu ${runId}`,
+          buyerAddressLine: BUYER_ADDRESS,
         }) as unknown,
-        // Re-imported without a service name: the default, with the year.
+        // The imported goods/service description is preserved verbatim.
         itemInfo: [
           expect.objectContaining({
-            itemName: 'Học phí năm học 2026-2027',
+            itemName: ITEM_NAME,
             unitName: 'Học sinh',
             quantity: 1,
             unitPrice: 560000,

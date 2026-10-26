@@ -129,4 +129,80 @@ describe('ImportValidationService student fields', () => {
       legacyTransferContent: 'HV072318004706 THVTS Lớp 3A4 Phan Dương Linh Đan',
     });
   });
+
+  it('normalizes the eight invoice fields and requires their amounts to agree', async () => {
+    const values = {
+      fullName: 'Phạm Bảo Lộc',
+      identifierCode: '072220003363',
+      classCode: '1A1',
+      paymentAmount: '560.000',
+      buyerName: 'Nguyễn Văn A',
+      buyerAddress: 'Lớp 1A1, Trường TH Lê Ngọc Hân',
+      buyerIdNo: '079123456789',
+      serviceName: 'Chương trình AI và STEM năm học 2026-2027 (7 tháng)',
+      unitName: 'Học sinh',
+      quantity: '1',
+      unitPrice: '560.000',
+      originalAmount: '560.000',
+    };
+    const valid = await service.validate(
+      [{ sheet: 'Tổng hợp', rowNumber: 2, values }],
+      {
+        type: ImportSessionType.STUDENTS,
+        schoolId: 'school-1',
+        paymentList: true,
+      },
+      'academic-year-1',
+    );
+
+    expect(valid.errors).toEqual([]);
+    expect(valid.validRows[0]).toMatchObject({
+      originalAmount: '560000.00',
+      quantity: '1.00',
+      unitPrice: '560000.00',
+      buyerName: 'Nguyễn Văn A',
+      buyerAddress: 'Lớp 1A1, Trường TH Lê Ngọc Hân',
+      buyerIdNo: '079123456789',
+      serviceName: 'Chương trình AI và STEM năm học 2026-2027 (7 tháng)',
+      unitName: 'Học sinh',
+    });
+
+    const invalid = await service.validate(
+      [
+        {
+          sheet: 'Tổng hợp',
+          rowNumber: 2,
+          values: { ...values, originalAmount: '550000' },
+        },
+      ],
+      {
+        type: ImportSessionType.STUDENTS,
+        schoolId: 'school-1',
+        paymentList: true,
+      },
+      'academic-year-1',
+    );
+    expect(invalid.errors.map((error) => error.message)).toContain(
+      'Thành tiền phải khớp với Số tiền cần thu',
+    );
+
+    const missingBuyerId = await service.validate(
+      [
+        {
+          sheet: 'Tổng hợp',
+          rowNumber: 2,
+          values: { ...values, identifierCode: '', buyerIdNo: '' },
+        },
+      ],
+      {
+        type: ImportSessionType.STUDENTS,
+        schoolId: 'school-1',
+        paymentList: true,
+      },
+      'academic-year-1',
+    );
+    expect(missingBuyerId.errors.map((error) => error.message)).toContain(
+      'Thiếu CCCD người mua hoặc mã định danh học sinh',
+    );
+  });
 });

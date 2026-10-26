@@ -238,4 +238,46 @@ describe('ViettelSinvoiceMapper theo mẫu hóa đơn của trường', () => {
       itemTotalAmountWithTax: 560000,
     });
   });
+
+  it('ưu tiên đủ 8 thông tin hóa đơn đã chốt từ dòng import', () => {
+    const importedReceivable = {
+      academicYear: { name: '2026-2027' },
+      feePlan: { billingType: BillingType.ONE_TIME },
+      invoiceBuyerName: 'Nguyễn Văn B',
+      invoiceBuyerAddress: 'Lớp 1A1, Trường TH Lê Ngọc Hân, Tây Ninh',
+      invoiceBuyerIdNo: '079123456789',
+      invoiceUnitName: 'Học sinh',
+      quantity: new Decimal(1),
+      unitPrice: new Decimal(560000),
+      originalAmount: new Decimal(560000),
+    };
+    const payload = mapper.fromReceipt(
+      invoiceAt({ name: 'TH Lê Ngọc Hân', address: null }),
+      receiptOf({
+        description:
+          'Chương trình giáo dục AI và STEM năm học 2026-2027 (7 tháng)',
+        amount: 560000,
+        receivable: importedReceivable,
+      }),
+      student,
+      config,
+      '1A1',
+    );
+
+    expect(payload.buyerInfo).toMatchObject({
+      buyerName: 'Nguyễn Văn B',
+      buyerAddressLine: 'Lớp 1A1, Trường TH Lê Ngọc Hân, Tây Ninh',
+      buyerIdNo: '079123456789',
+    });
+    expect(payload.itemInfo).toEqual([
+      expect.objectContaining({
+        itemName:
+          'Chương trình giáo dục AI và STEM năm học 2026-2027 (7 tháng)',
+        unitName: 'Học sinh',
+        quantity: 1,
+        unitPrice: 560000,
+        itemTotalAmountWithTax: 560000,
+      }),
+    ]);
+  });
 });

@@ -21,6 +21,10 @@ export interface CreateReceivableInput {
   semesterId?: string | null;
   feePlanId: string;
   description?: string | null;
+  invoiceBuyerName?: string | null;
+  invoiceBuyerAddress?: string | null;
+  invoiceBuyerIdNo?: string | null;
+  invoiceUnitName?: string | null;
   quantity: Decimal;
   unitPrice: Decimal;
   dueDate?: string | null;
@@ -84,6 +88,10 @@ export class ReceivablesService {
       amountDue: originalAmount,
       amountPaid: new Decimal(0),
       amountOutstanding: originalAmount,
+      invoiceBuyerName: input.invoiceBuyerName ?? null,
+      invoiceBuyerAddress: input.invoiceBuyerAddress ?? null,
+      invoiceBuyerIdNo: input.invoiceBuyerIdNo ?? null,
+      invoiceUnitName: input.invoiceUnitName ?? null,
       dueDate: input.dueDate ?? null,
       status: ReceivableStatus.UNPAID,
       createdBy: input.createdBy ?? null,

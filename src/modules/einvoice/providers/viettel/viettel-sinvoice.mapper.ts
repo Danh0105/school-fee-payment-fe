@@ -139,21 +139,36 @@ export class ViettelSinvoiceMapper {
       ),
     }));
 
-    const itemInfo = lines.map(({ item, calculated }): InvoiceItemDto =>
-      Object.assign(new InvoiceItemDto(), {
+    const itemInfo = lines.map(({ item, calculated }): InvoiceItemDto => {
+      const receivable = item.receivable;
+      const importedQuantity = receivable
+        ? new Decimal(receivable.quantity)
+        : new Decimal(0);
+      // Only reproduce the imported quantity/unit price for a full payment of
+      // that debt. A partial receipt must remain arithmetically correct.
+      const useReceivableBreakdown = Boolean(
+        receivable &&
+        receivable.originalAmount != null &&
+        importedQuantity.gt(0) &&
+        new Decimal(receivable.originalAmount).equals(item.amount),
+      );
+      const quantity = useReceivableBreakdown
+        ? importedQuantity
+        : new Decimal(1);
+      return Object.assign(new InvoiceItemDto(), {
         selection: 1,
         itemCode: item.receivableId ?? undefined,
         itemName: invoiceItemName(item),
-        unitName: 'Học sinh',
-        quantity: 1,
-        unitPrice: calculated.amountWithoutTax.toNumber(),
+        unitName: receivable?.invoiceUnitName?.trim() || 'Học sinh',
+        quantity: quantity.toNumber(),
+        unitPrice: calculated.amountWithoutTax.div(quantity).toNumber(),
         itemTotalAmountWithoutTax: calculated.amountWithoutTax.toNumber(),
         taxPercentage: taxPercentage.toNumber(),
         taxAmount: calculated.taxAmount.toNumber(),
         itemTotalAmountWithTax: calculated.amountWithTax.toNumber(),
         isIncreaseItem: true,
-      }),
-    );
+      });
+    });
     const totalWithoutTax = lines.reduce(
       (sum, line) => sum.plus(line.calculated.amountWithoutTax),
       new Decimal(0),
@@ -177,20 +192,25 @@ export class ViettelSinvoiceMapper {
       cusGetInvoiceRight: true,
       transactionUuid: invoice.transactionUuid,
     });
-    // The invoice is made out to the student: name, personal identification
-    // number (printed in the "Căn cước công dân" box) and address, else the
-    // class and school.
+    // An imported collection list may explicitly name the buyer. These values
+    // are snapshotted on the receivable so later student-profile edits do not
+    // alter the draft. Ordinary receivables keep the student-based fallback.
+    const invoiceReceivable = receipt.items.find(
+      (item) => item.receivable,
+    )?.receivable;
+    const buyerIdNo =
+      invoiceReceivable?.invoiceBuyerIdNo?.trim() || student.identifierCode;
     const buyerInfo = Object.assign(new BuyerInfoDto(), {
-      buyerName: student.fullName,
+      buyerName:
+        invoiceReceivable?.invoiceBuyerName?.trim() || student.fullName,
       buyerCode: student.studentCode,
       buyerAddressLine:
+        invoiceReceivable?.invoiceBuyerAddress?.trim() ||
         student.address?.trim() ||
         classSchoolAddress(className, invoice.school) ||
         undefined,
-      buyerIdType: student.identifierCode
-        ? BUYER_ID_TYPE_CITIZEN_ID
-        : undefined,
-      buyerIdNo: student.identifierCode ?? undefined,
+      buyerIdType: buyerIdNo ? BUYER_ID_TYPE_CITIZEN_ID : undefined,
+      buyerIdNo: buyerIdNo || undefined,
       buyerPhoneNumber: student.parentPhone ?? student.phone ?? undefined,
       buyerEmail: invoice.buyerEmail ?? student.parentEmail ?? undefined,
       buyerNotGetInvoice: 0,

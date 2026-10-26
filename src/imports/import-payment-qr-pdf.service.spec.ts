@@ -76,6 +76,10 @@ describe('ImportPaymentQrPdfService', () => {
     originalAmount: '560000.00',
     legacyTransferContent: `HV${identifierCode} THVTS Lớp 3A4 ${fullName}`,
     serviceName: null,
+    unitName: null,
+    buyerName: null,
+    buyerAddress: null,
+    buyerIdNo: null,
   });
 
   it('creates one Unicode payment slip page per imported student', async () => {

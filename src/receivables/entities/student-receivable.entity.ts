@@ -57,6 +57,20 @@ export class StudentReceivable extends BaseEntity {
   @Column({ type: 'varchar', length: 500, nullable: true })
   description: string | null;
 
+  /** Buyer fields captured from the collection-list row for its invoice. */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  invoiceBuyerName: string | null;
+
+  @Column({ type: 'varchar', length: 1200, nullable: true })
+  invoiceBuyerAddress: string | null;
+
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  invoiceBuyerIdNo: string | null;
+
+  /** Unit printed on the invoice line, e.g. "Học sinh". */
+  @Column({ type: 'varchar', length: 300, nullable: true })
+  invoiceUnitName: string | null;
+
   @Column({ ...decimalColumn(), precision: 10, scale: 2 })
   quantity: Decimal;
 

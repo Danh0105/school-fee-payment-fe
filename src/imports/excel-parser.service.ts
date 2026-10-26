@@ -39,6 +39,9 @@ export interface ParsedImportWorkbook {
 /** A sheet may start with a title block; the header row is searched for here. */
 const HEADER_SEARCH_ROWS = 10;
 
+/** Sheets of the import template that never hold import rows. */
+const HELPER_SHEETS = ['Thông tin trường', 'Hướng dẫn'];
+
 const COLUMN_ALIASES: Record<string, string> = {
   'MA HS': 'studentCode',
   'MA DINH DANH': 'identifierCode',
@@ -70,12 +73,22 @@ const COLUMN_ALIASES: Record<string, string> = {
   'SO LUONG (THANG)': 'quantity',
   'DON GIA': 'unitPrice',
   'THANH TIEN': 'originalAmount',
-  'SO TIEN': 'originalAmount',
-  'SO TIEN (VND)': 'originalAmount',
+  'SO TIEN': 'paymentAmount',
+  'SO TIEN (VND)': 'paymentAmount',
   'NOI DUNG CHUYEN KHOAN': 'legacyTransferContent',
   'NOI DUNG': 'legacyTransferContent',
   'NOI DUNG THANH TOAN': 'legacyTransferContent',
   'TEN HANG HOA DICH VU': 'serviceName',
+  'TEN HANG HOA, DICH VU': 'serviceName',
+  'TEN HANG HOA/DICH VU': 'serviceName',
+  'DON VI TINH': 'unitName',
+  'HO TEN NGUOI MUA HANG': 'buyerName',
+  'TEN NGUOI MUA HANG': 'buyerName',
+  'DIA CHI NGUOI MUA': 'buyerAddress',
+  'DIA CHI NGUOI MUA HANG': 'buyerAddress',
+  'CCCD NGUOI MUA': 'buyerIdNo',
+  'CCCD NGUOI MUA HANG': 'buyerIdNo',
+  'MA DINH DANH NGUOI MUA': 'buyerIdNo',
 };
 
 const SCHOOL_COLUMN_ALIASES: Record<string, keyof RawSchoolImportInfo> = {
@@ -144,10 +157,12 @@ export class ExcelParserService {
     }
 
     const requestedSheetName = sheetName?.trim();
-    const worksheet = requestedSheetName
-      ? workbook.getWorksheet(requestedSheetName)
-      : (workbook.getWorksheet('Dữ liệu import') ?? workbook.worksheets[0]);
-    if (!worksheet) {
+    const sheets = requestedSheetName
+      ? [workbook.getWorksheet(requestedSheetName)].filter(
+          (sheet): sheet is ExcelJS.Worksheet => Boolean(sheet),
+        )
+      : this.dataSheetCandidates(workbook);
+    if (sheets.length === 0) {
       throw AppException.badRequest(
         ErrorCode.VALIDATION_ERROR,
         requestedSheetName
@@ -156,6 +171,97 @@ export class ExcelParserService {
       );
     }
 
+    // The list is often not the first tab (a hidden or summary sheet comes
+    // first), so read the sheet whose header row is recognized best.
+    let best = this.findHeader(sheets[0]);
+    for (const sheet of sheets.slice(1)) {
+      const header = this.findHeader(sheet);
+      if (header.columnMap.size > best.columnMap.size) best = header;
+    }
+    const { worksheet, headerRowNumber, columnMap } = best;
+    const title = this.titleAbove(worksheet, headerRowNumber);
+    const titleClass = classFromTitle(title);
+
+    if (columnMap.size === 0) {
+      const read = sheets.map((sheet) => `“${sheet.name}”`).join(', ');
+      throw AppException.badRequest(
+        ErrorCode.VALIDATION_ERROR,
+        `Không nhận diện được tiêu đề cột nào trong file Excel (đã đọc sheet ${read}). ` +
+          'Dòng tiêu đề cần có các cột như HỌ VÀ TÊN, LỚP, MÃ ĐỊNH DANH, SỐ TIỀN.',
+      );
+    }
+
+    const rows: RawImportRow[] = [];
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber <= headerRowNumber) return;
+
+      const values: Record<string, string> = {};
+      let hasAnyValue = false;
+      columnMap.forEach((field, colNumber) => {
+        const cell = row.getCell(colNumber);
+        const raw = cell.value;
+        // For numeric identifiers formatted as 000000000000, ExcelJS's raw
+        // value drops the leading zero while cell.text preserves it.
+        const text = this.cellText(raw, cell.text, cell.numFmt).trim();
+        if (text) hasAnyValue = true;
+        values[field] = text;
+      });
+
+      // A list titled "... LỚP 3A4 ..." names its class in the title.
+      if (!values.classCode && !values.className && titleClass) {
+        values.classCode = titleClass;
+        values.className = titleClass;
+      }
+
+      // Legacy workbooks commonly use one worksheet per class (for example
+      // "3A4") and omit a repeated class column from every student row.
+      if (
+        !values.classCode &&
+        !values.className &&
+        worksheet.name !== 'Dữ liệu import' &&
+        !HELPER_SHEETS.includes(worksheet.name)
+      ) {
+        values.classCode = worksheet.name.trim();
+        values.className = worksheet.name.trim();
+      }
+
+      if (hasAnyValue) {
+        rows.push({ sheet: worksheet.name, rowNumber, values });
+      }
+    });
+
+    return {
+      rows,
+      schoolInfo: this.parseSchoolInfo(workbook),
+      title,
+    };
+  }
+
+  /**
+   * Sheets that may hold the import rows when no sheet is named: the
+   * template's "Dữ liệu import" alone, else every sheet but the template's
+   * helper sheets, visible ones first.
+   */
+  private dataSheetCandidates(workbook: ExcelJS.Workbook): ExcelJS.Worksheet[] {
+    const template = workbook.getWorksheet('Dữ liệu import');
+    if (template) return [template];
+
+    const sheets = workbook.worksheets.filter(
+      (sheet) => !HELPER_SHEETS.includes(sheet.name),
+    );
+    return (sheets.length > 0 ? sheets : workbook.worksheets)
+      .slice()
+      .sort(
+        (a, b) => Number(a.state !== 'visible') - Number(b.state !== 'visible'),
+      );
+  }
+
+  /** The row within the first rows that names the most known columns. */
+  private findHeader(worksheet: ExcelJS.Worksheet): {
+    worksheet: ExcelJS.Worksheet;
+    headerRowNumber: number;
+    columnMap: Map<number, string>;
+  } {
     let headerRowNumber = 1;
     let columnMap = new Map<number, string>();
     const lastSearchedRow = Math.min(HEADER_SEARCH_ROWS, worksheet.rowCount);
@@ -172,59 +278,7 @@ export class ExcelParserService {
         headerRowNumber = rowNumber;
       }
     }
-    const title = this.titleAbove(worksheet, headerRowNumber);
-    const titleClass = classFromTitle(title);
-
-    if (columnMap.size === 0) {
-      throw AppException.badRequest(
-        ErrorCode.VALIDATION_ERROR,
-        'Không nhận diện được tiêu đề cột nào trong file Excel',
-      );
-    }
-
-    const rows: RawImportRow[] = [];
-    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber <= headerRowNumber) return;
-
-      const values: Record<string, string> = {};
-      let hasAnyValue = false;
-      columnMap.forEach((field, colNumber) => {
-        const cell = row.getCell(colNumber);
-        const raw = cell.value;
-        const text = this.cellText(raw).trim();
-        if (text) hasAnyValue = true;
-        values[field] = text;
-      });
-
-      // A list titled "... LỚP 3A4 ..." names its class in the title.
-      if (!values.classCode && !values.className && titleClass) {
-        values.classCode = titleClass;
-        values.className = titleClass;
-      }
-
-      // Legacy workbooks commonly use one worksheet per class (for example
-      // "3A4") and omit a repeated class column from every student row.
-      if (
-        !values.classCode &&
-        !values.className &&
-        !['Dữ liệu import', 'Thông tin trường', 'Hướng dẫn'].includes(
-          worksheet.name,
-        )
-      ) {
-        values.classCode = worksheet.name.trim();
-        values.className = worksheet.name.trim();
-      }
-
-      if (hasAnyValue) {
-        rows.push({ sheet: worksheet.name, rowNumber, values });
-      }
-    });
-
-    return {
-      rows,
-      schoolInfo: this.parseSchoolInfo(workbook),
-      title,
-    };
+    return { worksheet, headerRowNumber, columnMap };
   }
 
   /** First non-empty cell text above the header row (the list's title). */
@@ -278,12 +332,17 @@ export class ExcelParserService {
 
     const row = worksheet.getRow(2);
     columnMap.forEach((field, colNumber) => {
-      result[field] = this.cellText(row.getCell(colNumber).value).trim();
+      const cell = row.getCell(colNumber);
+      result[field] = this.cellText(cell.value, cell.text, cell.numFmt).trim();
     });
     return Object.values(result).some(Boolean) ? result : null;
   }
 
-  private cellText(raw: ExcelJS.CellValue): string {
+  private cellText(
+    raw: ExcelJS.CellValue,
+    formattedText?: string,
+    numberFormat?: string,
+  ): string {
     if (raw === null || raw === undefined) return '';
     const rawUnknown = raw as unknown as Record<string, unknown>;
     if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
@@ -292,6 +351,13 @@ export class ExcelParserService {
         String(raw.getUTCMonth() + 1).padStart(2, '0'),
         String(raw.getUTCDate()).padStart(2, '0'),
       ].join('-');
+    }
+    if (typeof raw === 'number') {
+      const zeroMask = numberFormat?.match(/^0+$/)?.[0];
+      if (zeroMask && Number.isInteger(raw)) {
+        return String(raw).padStart(zeroMask.length, '0');
+      }
+      if (formattedText?.trim()) return formattedText;
     }
     if (typeof raw === 'object' && Array.isArray(rawUnknown.richText)) {
       return (rawUnknown.richText as { text?: unknown }[])
