@@ -238,9 +238,17 @@ export class ImportValidationService {
       const v = row.values;
       let rowHasError = false;
 
-      const fullName = v.fullName?.trim();
+      // Invoice lists name the student only as the buyer (HỌ TÊN NGƯỜI MUA
+      // HÀNG) and have no HỌ VÀ TÊN column.
+      const fullName = v.fullName?.trim() || v.buyerName?.trim();
       if (!fullName) {
-        addError(row, 'TÊN HS', 'fullName', v.fullName, 'Thiếu tên học sinh');
+        addError(
+          row,
+          'HỌ VÀ TÊN',
+          'fullName',
+          v.fullName,
+          'Thiếu tên học sinh (cột HỌ VÀ TÊN hoặc HỌ TÊN NGƯỜI MUA HÀNG)',
+        );
         rowHasError = true;
       }
 

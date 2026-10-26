@@ -237,4 +237,40 @@ describe('ImportValidationService student fields', () => {
       'Thiếu CCCD người mua hoặc mã định danh học sinh',
     );
   });
+
+  it('names the student from the buyer when the list has no HỌ VÀ TÊN column', async () => {
+    const result = await service.validate(
+      [
+        {
+          sheet: 'Sheet1',
+          rowNumber: 2,
+          values: {
+            classCode: '1A1',
+            identifierCode: '072220003363',
+            paymentAmount: '560000',
+            legacyTransferContent: 'HV072220003363 THLNH Lớp1A1 Phạm Bảo Lộc',
+            buyerName: 'Phạm Bảo Lộc',
+            buyerIdNo: '072220003363',
+            quantity: '1',
+            unitPrice: '560000',
+            originalAmount: '560000',
+          },
+        },
+      ],
+      {
+        type: ImportSessionType.STUDENTS,
+        schoolId: 'school-1',
+        allowCreateClasses: true,
+        paymentList: true,
+      },
+      'academic-year-1',
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows[0]).toMatchObject({
+      fullName: 'Phạm Bảo Lộc',
+      buyerName: 'Phạm Bảo Lộc',
+      originalAmount: '560000.00',
+    });
+  });
 });
