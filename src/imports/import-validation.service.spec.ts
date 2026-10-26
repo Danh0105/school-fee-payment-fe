@@ -98,6 +98,38 @@ describe('ImportValidationService student fields', () => {
     });
   });
 
+  it('takes the class name from a LỚP column when classes may be created', async () => {
+    classRepository.find.mockResolvedValueOnce([]);
+
+    const result = await service.validate(
+      [
+        {
+          sheet: 'Dữ liệu import',
+          rowNumber: 2,
+          values: {
+            fullName: 'Phạm Bảo Lộc',
+            identifierCode: '072220003363',
+            classCode: '1A1',
+            paymentAmount: '560000',
+          },
+        },
+      ],
+      {
+        type: ImportSessionType.STUDENTS,
+        schoolId: 'school-1',
+        allowCreateClasses: true,
+        paymentList: true,
+      },
+      'academic-year-1',
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows[0]).toMatchObject({
+      classCode: '1A1',
+      className: '1A1',
+    });
+  });
+
   it('preserves an optional payment amount and transfer content for bulk QR export', async () => {
     const result = await service.validate(
       [

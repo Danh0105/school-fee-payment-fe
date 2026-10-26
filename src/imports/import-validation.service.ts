@@ -123,7 +123,11 @@ export class ImportValidationService {
       ...new Set(rows.map((r) => r.values.classCode).filter(Boolean)),
     ];
     const classNames = [
-      ...new Set(rows.map((r) => r.values.className).filter(Boolean)),
+      ...new Set(
+        rows
+          .map((r) => r.values.className || r.values.classCode)
+          .filter(Boolean),
+      ),
     ];
     const classWhere: FindOptionsWhere<Class>[] = params.allowCreateClasses
       ? classNames.length
@@ -297,13 +301,19 @@ export class ImportValidationService {
 
       const suppliedClassCode = v.classCode?.trim();
       const suppliedClassName = v.className?.trim();
-      const className = params.allowCreateClasses
-        ? suppliedClassName
-        : suppliedClassName || suppliedClassCode;
+      // A list's LỚP column ("1A1") names the class when there is no TÊN LỚP;
+      // created classes get a generated code, so the name is their key.
+      const className = suppliedClassName || suppliedClassCode;
       const classGrade = v.classGrade?.trim() || null;
       let matchedClass: Class | undefined;
       if (params.allowCreateClasses && !className) {
-        addError(row, 'TÊN LỚP', 'className', v.className, 'Thiếu tên lớp');
+        addError(
+          row,
+          'TÊN LỚP',
+          'className',
+          v.className,
+          'Thiếu lớp (cột LỚP hoặc TÊN LỚP)',
+        );
         rowHasError = true;
       } else if (!params.allowCreateClasses && !suppliedClassCode) {
         addError(row, 'LỚP', 'classCode', v.classCode, 'Thiếu mã lớp');
