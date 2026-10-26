@@ -135,6 +135,21 @@ export class ImportsController {
     );
   }
 
+  /** Saved payment lists, to download their QR slips again. */
+  @Get()
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
+  async findSavedPaymentLists(
+    @CurrentUser() user: AuthUser,
+    @Query('schoolId', new ParseUUIDPipe({ optional: true }))
+    schoolId?: string,
+  ) {
+    const scopedIds = await this.accessControlService.resolveSchoolFilter(
+      user,
+      schoolId,
+    );
+    return this.service.findSavedPaymentLists(scopedIds);
+  }
+
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTANT)
   async findOne(

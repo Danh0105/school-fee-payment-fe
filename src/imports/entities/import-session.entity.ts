@@ -15,6 +15,8 @@ export enum ImportSessionType {
 
 export enum ImportSessionStatus {
   PENDING_CONFIRMATION = 'PENDING_CONFIRMATION',
+  /** Being saved: claimed by one confirm, so a second cannot start. */
+  PROCESSING = 'PROCESSING',
   CONFIRMED = 'CONFIRMED',
   EXPIRED = 'EXPIRED',
 }

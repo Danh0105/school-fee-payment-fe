@@ -35,6 +35,7 @@ import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { Role } from '../common/enums/role.enum';
 import { SequenceService } from '../database/sequence.service';
 import { Student } from '../students/entities/student.entity';
+import { applySchoolScope } from '../common/utils/school-scope.util';
 import {
   ImportPaymentOrdersService,
   PAYMENT_LIST_SERVICE_NAME,
@@ -43,6 +44,9 @@ import {
   rowTransferContent,
 } from './import-payment-orders.service';
 import type { ImportedRowOrder } from './import-payment-qr-pdf.service';
+
+/** VietinBank QR calls in flight at once while a payment list is saved. */
+const QR_CONCURRENCY = 5;
 
 export interface PreviewSummary {
   importSessionId: string;
@@ -61,6 +65,16 @@ export interface PreviewSummary {
     academicYearWillBeCreated: boolean;
     classesInFile: number;
   } | null;
+}
+
+export interface SavedPaymentList {
+  id: string;
+  fileName: string;
+  title: string | null;
+  schoolId: string;
+  schoolName: string | null;
+  createdAt: Date;
+  paymentOrders: number;
 }
 
 export interface ConfirmSummary {
@@ -427,6 +441,12 @@ export class ImportsService {
     });
     if (!session)
       throw AppException.notFound(ErrorCode.IMPORT_SESSION_NOT_FOUND);
+    if (session.status === ImportSessionStatus.PROCESSING) {
+      throw AppException.badRequest(
+        ErrorCode.VALIDATION_ERROR,
+        'Danh sách này đang được lưu, vui lòng chờ trong giây lát',
+      );
+    }
     if (session.status !== ImportSessionStatus.PENDING_CONFIRMATION) {
       throw AppException.badRequest(
         ErrorCode.VALIDATION_ERROR,
@@ -440,6 +460,34 @@ export class ImportsService {
       );
     }
 
+    // Claim the session first: a second click, or a retry after the browser
+    // gave up waiting, must not save the list twice while QRs are drawn.
+    const claim = await this.sessionRepo.update(
+      { id: session.id, status: ImportSessionStatus.PENDING_CONFIRMATION },
+      { status: ImportSessionStatus.PROCESSING },
+    );
+    if (!claim.affected) {
+      throw AppException.badRequest(
+        ErrorCode.VALIDATION_ERROR,
+        'Danh sách này đang được lưu hoặc đã được xử lý',
+      );
+    }
+    try {
+      return await this.saveSession(session, actor);
+    } catch (error) {
+      // Nothing was saved (the transaction rolled back): allow a new try.
+      await this.sessionRepo.update(
+        { id: session.id, status: ImportSessionStatus.PROCESSING },
+        { status: ImportSessionStatus.PENDING_CONFIRMATION },
+      );
+      throw error;
+    }
+  }
+
+  private async saveSession(
+    session: ImportSession,
+    actor: { userId: string; ipAddress?: string; userAgent?: string },
+  ): Promise<ConfirmSummary> {
     const feePlan = session.feePlanId
       ? await this.feePlansService.findById(session.feePlanId)
       : null;
@@ -453,15 +501,31 @@ export class ImportsService {
             ?.name ??
           '',
       );
-      for (const row of session.validRows) {
-        preparedQrs.set(
-          row.rowNumber,
-          await this.importPaymentOrdersService.prepareOrderQr(
-            new Decimal(row.originalAmount),
-            payee,
-          ),
-        );
-      }
+      // A few bank calls at a time: one after another, a 490-row list took
+      // minutes. The first failure stops the workers taking new rows.
+      const rows = session.validRows;
+      let nextIndex = 0;
+      let failed = false;
+      const drawQrs = async () => {
+        while (!failed && nextIndex < rows.length) {
+          const row = rows[nextIndex++];
+          try {
+            preparedQrs.set(
+              row.rowNumber,
+              await this.importPaymentOrdersService.prepareOrderQr(
+                new Decimal(row.originalAmount),
+                payee,
+              ),
+            );
+          } catch (error) {
+            failed = true;
+            throw error;
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(QR_CONCURRENCY, rows.length) }, drawQrs),
+      );
     }
 
     return this.dataSource.transaction(async (manager) => {
@@ -791,6 +855,39 @@ export class ImportsService {
       classesCreated += 1;
     }
     return classesCreated;
+  }
+
+  /** Saved payment lists, newest first, so their QR slips can be printed again. */
+  async findSavedPaymentLists(
+    scopedIds: string[] | null,
+    limit = 20,
+  ): Promise<SavedPaymentList[]> {
+    const qb = this.sessionRepo
+      .createQueryBuilder('s')
+      .leftJoin(School, 'school', 'school.id = s.schoolId')
+      .where('s.status = :status', { status: ImportSessionStatus.CONFIRMED })
+      .andWhere(`s.paymentOptions ->> 'createPaymentOrders' = 'true'`);
+    if (!applySchoolScope(qb, 's.schoolId', scopedIds)) return [];
+
+    const rows = await qb
+      .select('s.id', 'id')
+      .addSelect('s.fileName', 'fileName')
+      .addSelect(`s.paymentOptions ->> 'title'`, 'title')
+      .addSelect('s.schoolId', 'schoolId')
+      .addSelect('school.name', 'schoolName')
+      .addSelect('s.createdAt', 'createdAt')
+      .addSelect(`s.confirmResult ->> 'paymentOrdersCreated'`, 'paymentOrders')
+      .orderBy('s.createdAt', 'DESC')
+      .limit(limit)
+      .getRawMany<
+        Omit<SavedPaymentList, 'paymentOrders'> & {
+          paymentOrders: string | null;
+        }
+      >();
+    return rows.map((row) => ({
+      ...row,
+      paymentOrders: Number(row.paymentOrders ?? 0),
+    }));
   }
 
   async findById(id: string): Promise<ImportSession> {
