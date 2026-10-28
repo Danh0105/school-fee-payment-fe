@@ -53,6 +53,32 @@ describe('ViettelSinvoiceHttpService', () => {
     });
   });
 
+  it('Viettel 500 "GENERAL" giữ lý do trong data và ghi log body', async () => {
+    const warn = jest
+      .spyOn(
+        (service as unknown as { logger: { warn: (m: string) => void } })
+          .logger,
+        'warn',
+      )
+      .mockImplementation(() => undefined);
+    axiosRef.request.mockRejectedValue({
+      response: {
+        status: 500,
+        data: { message: 'GENERAL', data: 'Ký hiệu hóa đơn không hợp lệ' },
+      },
+    });
+    await expect(
+      service.request({ endpoint: VIETTEL_ENDPOINTS.draft }),
+    ).rejects.toMatchObject({
+      kind: 'VIETTEL_5XX',
+      viettelMessage: 'GENERAL: Ký hiệu hóa đơn không hợp lệ',
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Ký hiệu hóa đơn không hợp lệ'),
+    );
+    warn.mockRestore();
+  });
+
   it('validation 400 không retry', async () => {
     axiosRef.request.mockRejectedValue({
       response: {

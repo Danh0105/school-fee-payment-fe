@@ -22,6 +22,13 @@ export interface ViettelRequestOptions {
   paymentId?: string;
 }
 
+/** An error body for the log: at most 1000 characters of it. */
+function truncatedBody(body: unknown): string | null {
+  if (body == null || body === '') return null;
+  const text = typeof body === 'string' ? body : JSON.stringify(body);
+  return text.length > 1000 ? `${text.slice(0, 1000)}…` : text;
+}
+
 @Injectable()
 export class ViettelSinvoiceHttpService {
   private readonly logger = new Logger(ViettelSinvoiceHttpService.name);
@@ -92,6 +99,21 @@ export class ViettelSinvoiceHttpService {
         this.auth.invalidate();
         return this.request<T>(options, false);
       }
+      // Failed calls were not logged at all, and Viettel's bare "GENERAL"
+      // says nothing: keep the start of the body to see the real reason.
+      this.logger.warn(
+        JSON.stringify({
+          requestId,
+          invoiceId: options.invoiceId,
+          paymentId: options.paymentId,
+          transactionUuid: options.transactionUuid,
+          endpoint: path,
+          duration: Date.now() - startedAt,
+          httpStatus: axiosError.response?.status ?? null,
+          code: axiosError.code ?? null,
+          body: truncatedBody(axiosError.response?.data),
+        }),
+      );
       throw this.mapError(error, path, options.transactionUuid ?? null);
     }
   }
@@ -122,9 +144,19 @@ export class ViettelSinvoiceHttpService {
       description?: unknown;
       code?: unknown;
       message?: unknown;
+      data?: unknown;
     };
     const code = body.errorCode ?? body.code;
-    const message = body.description ?? body.message;
+    const summary = body.description ?? body.message;
+    // InvoiceWS may give only a key in message ("GENERAL") and the reason
+    // in data.
+    const detail = typeof body.data === 'string' ? body.data.trim() : '';
+    const message =
+      typeof summary === 'string' && detail && detail !== summary
+        ? `${summary}: ${detail}`
+        : typeof summary === 'string'
+          ? summary
+          : detail || null;
     const isTimeout =
       axiosError.code === 'ECONNABORTED' || axiosError.code === 'ETIMEDOUT';
     const isNetwork = !axiosError.response && !isTimeout;
@@ -149,9 +181,7 @@ export class ViettelSinvoiceHttpService {
       kind,
       status,
       normalizedCode,
-      typeof message === 'string'
-        ? message
-        : 'Viettel S-Invoice request failed',
+      message ?? 'Viettel S-Invoice request failed',
       endpoint,
       uuid,
       isTimeout || isNetwork || (status != null && status >= 500),
