@@ -5,6 +5,29 @@ import { getViettelSinvoiceConfig } from './viettel-sinvoice.config';
 import { ViettelSinvoiceTokenStore } from './viettel-sinvoice-token.store';
 import { ViettelSinvoiceException } from './exceptions/viettel-sinvoice.exception';
 
+/** Log in again this long before Viettel's own expiry. */
+const EXPIRY_MARGIN_MS = 60_000;
+
+/** How long the token lives, from expires_in or else the JWT's exp - iat. */
+function tokenLifetimeMs(expiresIn: unknown, token: string): number | null {
+  const seconds = Number(expiresIn);
+  if (expiresIn != null && Number.isFinite(seconds) && seconds > 0) {
+    return seconds * 1000;
+  }
+  try {
+    const payload = JSON.parse(
+      Buffer.from(token.split('.')[1] ?? '', 'base64url').toString(),
+    ) as { exp?: unknown; iat?: unknown };
+    if (typeof payload.exp === 'number' && typeof payload.iat === 'number') {
+      const lifetime = (payload.exp - payload.iat) * 1000;
+      return lifetime > 0 ? lifetime : null;
+    }
+  } catch {
+    // Not a JWT: no lifetime to read.
+  }
+  return null;
+}
+
 @Injectable()
 export class ViettelSinvoiceAuthService {
   private loginInFlight: Promise<string> | null = null;
@@ -57,7 +80,12 @@ export class ViettelSinvoiceAuthService {
       const body = response.data as {
         access_token?: unknown;
         accessToken?: unknown;
-        data?: { access_token?: unknown; accessToken?: unknown };
+        expires_in?: unknown;
+        data?: {
+          access_token?: unknown;
+          accessToken?: unknown;
+          expires_in?: unknown;
+        };
       };
       const token =
         body.access_token ??
@@ -67,7 +95,18 @@ export class ViettelSinvoiceAuthService {
       if (typeof token !== 'string' || token.length === 0) {
         throw new Error('Login response does not contain access_token');
       }
-      this.tokens.set(token);
+      // The token used to be kept until restart, and Viettel answers an
+      // expired one with 500 "GENERAL", which never cleared it.
+      const lifetime = tokenLifetimeMs(
+        body.expires_in ?? body.data?.expires_in,
+        token,
+      );
+      this.tokens.set(
+        token,
+        lifetime == null
+          ? null
+          : Date.now() + Math.max(lifetime - EXPIRY_MARGIN_MS, lifetime / 2),
+      );
       return token;
     } catch {
       throw new ViettelSinvoiceException(

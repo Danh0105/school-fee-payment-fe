@@ -33,6 +33,30 @@ describe('ViettelSinvoiceHttpService', () => {
     expect(axiosRef.request).toHaveBeenCalledTimes(2);
   });
 
+  it('500 "GENERAL" trơn là token hết hạn: login lại và gọi lại một lần', async () => {
+    axiosRef.request
+      .mockRejectedValueOnce({
+        response: { status: 500, data: { message: 'GENERAL' } },
+      })
+      .mockResolvedValueOnce({ status: 200, data: { ok: true } });
+    await expect(
+      service.request({ endpoint: VIETTEL_ENDPOINTS.draft }),
+    ).resolves.toEqual({ ok: true });
+    expect(auth.invalidate).toHaveBeenCalledTimes(1);
+    expect(axiosRef.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('500 "GENERAL" lặp lại chỉ gọi lại một lần rồi báo VIETTEL_5XX', async () => {
+    axiosRef.request.mockRejectedValue({
+      response: { status: 500, data: { message: 'GENERAL' } },
+    });
+    await expect(
+      service.request({ endpoint: VIETTEL_ENDPOINTS.draft }),
+    ).rejects.toMatchObject({ kind: 'VIETTEL_5XX', retryable: true });
+    expect(auth.invalidate).toHaveBeenCalledTimes(1);
+    expect(axiosRef.request).toHaveBeenCalledTimes(2);
+  });
+
   it('timeout là lỗi retryable', async () => {
     axiosRef.request.mockRejectedValue({ code: 'ETIMEDOUT' });
     await expect(
@@ -76,6 +100,8 @@ describe('ViettelSinvoiceHttpService', () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('Ký hiệu hóa đơn không hợp lệ'),
     );
+    // A reason in data is a real rejection, not a stale token.
+    expect(auth.invalidate).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 

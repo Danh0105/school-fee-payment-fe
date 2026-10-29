@@ -29,6 +29,22 @@ function truncatedBody(body: unknown): string | null {
   return text.length > 1000 ? `${text.slice(0, 1000)}…` : text;
 }
 
+/**
+ * Viettel rejects a stale token with 401/403, or with a bare 500 "GENERAL"
+ * (no reason in data) that even read-only calls get.
+ */
+function isAuthFailure(error: AxiosError<unknown>): boolean {
+  const status = error.response?.status ?? 0;
+  if (status === 401 || status === 403) return true;
+  const body = error.response?.data as
+    { message?: unknown; data?: unknown } | undefined;
+  return (
+    status === 500 &&
+    body?.message === 'GENERAL' &&
+    !(typeof body.data === 'string' && body.data.trim())
+  );
+}
+
 @Injectable()
 export class ViettelSinvoiceHttpService {
   private readonly logger = new Logger(ViettelSinvoiceHttpService.name);
@@ -95,10 +111,6 @@ export class ViettelSinvoiceHttpService {
       return response.data;
     } catch (error) {
       const axiosError = error as AxiosError<unknown>;
-      if (authRetry && [401, 403].includes(axiosError.response?.status ?? 0)) {
-        this.auth.invalidate();
-        return this.request<T>(options, false);
-      }
       // Failed calls were not logged at all, and Viettel's bare "GENERAL"
       // says nothing: keep the start of the body to see the real reason.
       this.logger.warn(
@@ -114,6 +126,10 @@ export class ViettelSinvoiceHttpService {
           body: truncatedBody(axiosError.response?.data),
         }),
       );
+      if (authRetry && isAuthFailure(axiosError)) {
+        this.auth.invalidate();
+        return this.request<T>(options, false);
+      }
       throw this.mapError(error, path, options.transactionUuid ?? null);
     }
   }
