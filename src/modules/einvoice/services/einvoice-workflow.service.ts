@@ -96,7 +96,7 @@ export class EInvoiceWorkflowService {
       const asDraft = config.issueMode === EInvoiceIssueMode.DRAFT;
       if (asDraft) attempt.endpoint = VIETTEL_ENDPOINTS.draft.path;
       const existing = resend ? await this.findAtProvider(invoice) : null;
-      if (existing) {
+      if (existing && !(asDraft && existing.lookupDegraded)) {
         await this.events.save(
           this.events.create({
             invoiceId,
@@ -176,7 +176,7 @@ export class EInvoiceWorkflowService {
           result.reservationCode ?? invoice.reservationCode;
         invoice.transactionId = result.transactionID ?? invoice.transactionId;
         invoice.codeOfTax = result.codeOfTax ?? invoice.codeOfTax;
-        await this.markIssuedAndQueueFiles(invoice);
+        await this.markIssuedAndQueueFiles(invoice, result.issueDate);
       } else if (
         invoice.reconciliationAttempts < RECONCILIATION_DELAYS.length
       ) {
@@ -335,7 +335,7 @@ export class EInvoiceWorkflowService {
             payload: { invoiceNo: found.invoiceNo },
           }),
         );
-        await this.markIssuedAndQueueFiles(invoice);
+        await this.markIssuedAndQueueFiles(invoice, found.issueDate);
       } else {
         await this.invoices.save(invoice);
       }
@@ -357,7 +357,10 @@ export class EInvoiceWorkflowService {
         invoice.supplierTaxCode,
         invoice.transactionUuid,
       );
-      return found.invoiceNo || found.transactionID || found.exists
+      return found.invoiceNo ||
+        found.transactionID ||
+        found.exists ||
+        found.lookupDegraded
         ? found
         : null;
     } catch (error) {
@@ -373,7 +376,11 @@ export class EInvoiceWorkflowService {
     invoice: EInvoice,
     result: Pick<
       ViettelTransactionSearchResult,
-      'invoiceNo' | 'transactionID' | 'reservationCode' | 'codeOfTax'
+      | 'invoiceNo'
+      | 'transactionID'
+      | 'reservationCode'
+      | 'codeOfTax'
+      | 'issueDate'
     >,
   ): Promise<void> {
     invoice.transactionId = result.transactionID || invoice.transactionId;
@@ -383,7 +390,7 @@ export class EInvoiceWorkflowService {
     invoice.errorCode = null;
     invoice.errorDescription = null;
     if (invoice.invoiceNo) {
-      await this.markIssuedAndQueueFiles(invoice);
+      await this.markIssuedAndQueueFiles(invoice, result.issueDate);
       return;
     }
     invoice.status = EInvoiceStatus.WAITING_INVOICE_NUMBER;
@@ -396,7 +403,11 @@ export class EInvoiceWorkflowService {
     result: Partial<
       Pick<
         ViettelTransactionSearchResult,
-        'invoiceNo' | 'transactionID' | 'reservationCode' | 'codeOfTax'
+        | 'invoiceNo'
+        | 'transactionID'
+        | 'reservationCode'
+        | 'codeOfTax'
+        | 'issueDate'
       >
     >,
   ): Promise<void> {
@@ -407,6 +418,7 @@ export class EInvoiceWorkflowService {
         transactionID: result.transactionID ?? '',
         reservationCode: result.reservationCode,
         codeOfTax: result.codeOfTax,
+        issueDate: result.issueDate,
       });
       return;
     }
@@ -471,9 +483,14 @@ export class EInvoiceWorkflowService {
     return link?.class?.name ?? null;
   }
 
-  private async markIssuedAndQueueFiles(invoice: EInvoice): Promise<void> {
+  private async markIssuedAndQueueFiles(
+    invoice: EInvoice,
+    providerIssueDate?: string | number | null,
+  ): Promise<void> {
     invoice.status = EInvoiceStatus.ISSUED;
-    invoice.issuedAt = new Date();
+    invoice.errorCode = null;
+    invoice.errorDescription = null;
+    invoice.issuedAt = this.issueDate(providerIssueDate) ?? new Date();
     await this.invoices.save(invoice);
     for (const fileType of ['PDF', 'ZIP'] as const) {
       await this.downloadQueue.add(
@@ -487,6 +504,14 @@ export class EInvoiceWorkflowService {
         },
       );
     }
+  }
+
+  private issueDate(value?: string | number | null): Date | null {
+    if (value == null || value === '') return null;
+    const parsed = new Date(
+      typeof value === 'number' || /^\d+$/.test(value) ? Number(value) : value,
+    );
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   private startAttempt(

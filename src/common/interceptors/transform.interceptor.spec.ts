@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { CallHandler, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { of } from 'rxjs';
@@ -44,9 +45,9 @@ describe('TransformInterceptor', () => {
       done();
     });
 
-    expect(reflector.getAllAndOverride).toHaveBeenCalledWith(
-      RAW_RESPONSE_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    expect(reflector.getAllAndOverride).toHaveBeenCalledWith(RAW_RESPONSE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
   });
 });

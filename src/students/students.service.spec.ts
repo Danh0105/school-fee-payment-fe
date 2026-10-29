@@ -1,4 +1,4 @@
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { SequenceService } from '../database/sequence.service';
 import { School } from '../schools/entities/school.entity';
 import { SchoolsService } from '../schools/schools.service';
@@ -66,5 +66,45 @@ describe('StudentsService generated code', () => {
     );
     expect(queryBuilder.take).toHaveBeenCalledWith(2);
     expect(getMany).toHaveBeenCalled();
+  });
+
+  it('reads a newly created school through the supplied transaction manager', async () => {
+    const schoolId = '00000000-0000-4000-8000-000000000001';
+    const schoolRepository = {
+      findOne: jest.fn(() =>
+        Promise.resolve({ id: schoolId, code: 'NEW-SCHOOL' } as School),
+      ),
+    };
+    const studentRepository = {
+      findOne: jest.fn(() => Promise.resolve(null)),
+      create: jest.fn((value: Partial<Student>) => value as Student),
+      save: jest.fn((value: Student) => Promise.resolve(value)),
+    };
+    const manager = {
+      getRepository: jest.fn((entity: unknown) =>
+        entity === School ? schoolRepository : studentRepository,
+      ),
+    } as unknown as EntityManager;
+    const findSchoolOutsideTransaction = jest.fn();
+    const service = new StudentsService(
+      {} as Repository<Student>,
+      {
+        findById: findSchoolOutsideTransaction,
+      } as unknown as SchoolsService,
+      {} as SequenceService,
+    );
+
+    const student = await service.create(
+      {
+        schoolId,
+        studentCode: 'HS001',
+        fullName: 'Học sinh A',
+      },
+      manager,
+    );
+
+    expect(student.studentCode).toBe('HS001');
+    expect(schoolRepository.findOne).toHaveBeenCalled();
+    expect(findSchoolOutsideTransaction).not.toHaveBeenCalled();
   });
 });

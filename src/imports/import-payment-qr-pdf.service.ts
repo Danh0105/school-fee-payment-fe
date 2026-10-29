@@ -15,23 +15,28 @@ import { School } from '../schools/entities/school.entity';
 import { AcademicYear } from '../academic-years/entities/academic-year.entity';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
-import { buildTransferQr } from '../common/utils/vietqr.util';
+import {
+  buildVietQrPayload,
+  toVietQrText,
+  truncateVietQrText,
+} from '../common/utils/vietqr.util';
 import { PaymentOrder } from '../payment-orders/entities/payment-order.entity';
 import {
   ImportSession,
   ParsedImportRow,
 } from './entities/import-session.entity';
-import { rowTransferContent } from './import-payment-orders.service';
 
 /** What one slip asks the parent to pay, and where to. */
 interface SlipPayment {
+  bankBin: string;
   bankLabel: string;
   accountNumber: string;
   accountName: string;
   amount: Decimal;
-  transferContent: string;
-  qrPayload: string;
-  /** The list's NỘI DUNG when the QR carries the order key instead. */
+  reusable: boolean;
+  /** Exact EMV payload returned by VietinBank for a saved dynamic order. */
+  storedQrPayload: string | null;
+  /** The original NỘI DUNG column from the imported list. */
   note: string | null;
 }
 
@@ -49,6 +54,49 @@ interface PaymentSchoolInfo {
   bankCode: string | null;
   bankAccountNumber: string | null;
   bankAccountName: string | null;
+}
+
+/** Human-readable payment content printed on each PDF slip. */
+export function paymentSlipContent(
+  schoolName: string,
+  className: string,
+  studentName: string,
+): string {
+  const normalizedClassName = className.replace(/^lớp\s+/iu, '').trim();
+  return truncateVietQrText(
+    toVietQrText(
+      [
+        schoolName.trim(),
+        `Lớp ${normalizedClassName}`,
+        studentName.trim(),
+      ].join(' - '),
+    ),
+    95,
+  );
+}
+
+export function paymentSlipQrPayload(input: {
+  bankBin: string;
+  accountNumber: string;
+  accountName: string;
+  amount: Decimal;
+  content: string;
+  reusable: boolean;
+  storedQrPayload?: string | null;
+}): string {
+  // Dynamic virtual-account QR must be printed byte-for-byte as issued by
+  // VietinBank. Rebuilding it locally can change required NAPAS fields and
+  // makes some banking apps reject the otherwise valid payment order.
+  if (input.storedQrPayload) return input.storedQrPayload;
+
+  return buildVietQrPayload({
+    bankBin: input.bankBin,
+    accountNumber: input.accountNumber,
+    amount: input.amount.toFixed(0),
+    addInfo: input.content,
+    merchantName: toVietQrText(input.accountName),
+    pointOfInitiation: input.reusable ? '11' : '12',
+  });
 }
 
 @Injectable()
@@ -85,8 +133,8 @@ export class ImportPaymentQrPdfService {
 
     let slips: { row: ParsedImportRow; payment: SlipPayment }[];
     if (savesDebts) {
-      // Saved lists print each order's VietinBank QR; the money goes to the
-      // company's collection account, so the school needs no bank account.
+      // Saved lists retain each order's virtual account so bank callbacks
+      // still reconcile by VAV, while the QR transfer note is made readable.
       const payee =
         this.config.get<string>('viettinbank.accountName') || school.name;
       slips = session.validRows
@@ -96,12 +144,13 @@ export class ImportPaymentQrPdfService {
           return {
             row,
             payment: {
+              bankBin: '970415',
               bankLabel: 'VietinBank',
               accountNumber: order.bankAccountNumber ?? '',
               accountName: payee,
               amount: order.requestedAmount,
-              transferContent: order.transferContent,
-              qrPayload: order.qrPayload ?? '',
+              reusable: false,
+              storedQrPayload: order.qrPayload,
               note: order.legacyTransferContent,
             },
           };
@@ -111,23 +160,16 @@ export class ImportPaymentQrPdfService {
       this.assertPaymentAmounts(session.validRows);
       slips = session.validRows.map((row) => {
         const amount = new Decimal(row.originalAmount);
-        const qr = buildTransferQr({
-          bankBin: school.bankCode,
-          accountNumber: school.bankAccountNumber,
-          accountName: school.bankAccountName,
-          amount: amount.toFixed(0),
-          transferContent: rowTransferContent(row, school.code),
-          reusable: expiresOn === null,
-        });
         return {
           row,
           payment: {
+            bankBin: school.bankCode,
             bankLabel: school.bankName ?? school.bankCode,
             accountNumber: school.bankAccountNumber,
             accountName: school.bankAccountName,
             amount,
-            transferContent: qr.transferContent,
-            qrPayload: qr.qrPayload,
+            reusable: expiresOn === null,
+            storedQrPayload: null,
             note: null,
           },
         };
@@ -135,13 +177,7 @@ export class ImportPaymentQrPdfService {
     }
 
     const content: Content[] = slips.map(({ row, payment }, index) => ({
-      stack: this.buildPaymentSlip(
-        row,
-        school.name,
-        academicYearName,
-        expiresOn,
-        payment,
-      ),
+      stack: this.buildPaymentSlip(row, school.name, academicYearName, payment),
       ...(index < slips.length - 1 ? { pageBreak: 'after' as const } : {}),
     }));
 
@@ -271,11 +307,24 @@ export class ImportPaymentQrPdfService {
     row: ParsedImportRow,
     schoolName: string,
     academicYearName: string,
-    expiresOn: string | null,
     payment: SlipPayment,
   ): Content[] {
     const className = row.className.replace(/^lớp\s+/iu, '').trim();
-    const { amount, transferContent, qrPayload } = payment;
+    const { amount } = payment;
+    const displayPaymentContent = paymentSlipContent(
+      schoolName,
+      className,
+      row.fullName,
+    );
+    const qrPayload = paymentSlipQrPayload({
+      bankBin: payment.bankBin,
+      accountNumber: payment.accountNumber,
+      accountName: payment.accountName,
+      amount,
+      content: displayPaymentContent,
+      reusable: payment.reusable,
+      storedQrPayload: payment.storedQrPayload,
+    });
     const noteRows: TableCell[][] = payment.note
       ? [
           [
@@ -341,20 +390,12 @@ export class ImportPaymentQrPdfService {
           [
             { text: 'Nội dung thanh toán', margin: [5, 9, 5, 9] },
             {
-              text: transferContent,
+              text: displayPaymentContent,
               bold: true,
               margin: [5, 9, 5, 9],
             },
           ],
           ...noteRows,
-          [
-            { text: 'Hạn thanh toán', margin: [5, 9, 5, 9] },
-            {
-              text: expiresOn ? this.formatDate(expiresOn) : 'Không thời hạn',
-              bold: true,
-              margin: [5, 9, 5, 9],
-            },
-          ],
         ],
       },
       layout: {
@@ -450,13 +491,6 @@ export class ImportPaymentQrPdfService {
           hLineWidth: () => 0.7,
           vLineWidth: () => 0.7,
         },
-      },
-      {
-        text: 'Vui lòng không sửa số tiền và nội dung chuyển khoản khi thanh toán.',
-        alignment: 'center',
-        italics: true,
-        color: '#5f6368',
-        margin: [0, 14, 0, 0],
       },
     ];
   }

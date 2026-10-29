@@ -22,7 +22,13 @@ import {
   PaymentProviderCode,
 } from '../common/enums/status.enum';
 
-const n = (v: unknown) => (v === null || v === undefined ? '' : String(v));
+const n = (v: unknown) =>
+  typeof v === 'string' ||
+  typeof v === 'number' ||
+  typeof v === 'boolean' ||
+  typeof v === 'bigint'
+    ? String(v)
+    : '';
 
 /**
  * Endpoints VietinBank calls directly (per their eBank Biz collection

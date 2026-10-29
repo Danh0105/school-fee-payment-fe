@@ -3,13 +3,18 @@ import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'node:path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
 
   app.use(helmet());
+  app.useStaticAssets(join(process.cwd(), 'sites/qr-import-admin/dist'), {
+    prefix: '/qr-import/',
+  });
   app.enableCors({
     origin: config.get<string[]>('cors.origins'),
     credentials: true,

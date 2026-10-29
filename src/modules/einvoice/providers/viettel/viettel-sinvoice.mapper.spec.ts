@@ -244,7 +244,7 @@ describe('ViettelSinvoiceMapper theo mẫu hóa đơn của trường', () => {
       academicYear: { name: '2026-2027' },
       feePlan: { billingType: BillingType.ONE_TIME },
       invoiceBuyerName: 'Nguyễn Văn B',
-      invoiceBuyerAddress: 'Lớp 1A1, Trường TH Lê Ngọc Hân, Tây Ninh',
+      invoiceBuyerAddress: 'Lớp 1A1, Trường TH Demo, Tỉnh Mẫu',
       invoiceBuyerIdNo: '079123456789',
       invoiceUnitName: 'Học sinh',
       quantity: new Decimal(1),
@@ -252,7 +252,7 @@ describe('ViettelSinvoiceMapper theo mẫu hóa đơn của trường', () => {
       originalAmount: new Decimal(560000),
     };
     const payload = mapper.fromReceipt(
-      invoiceAt({ name: 'TH Lê Ngọc Hân', address: null }),
+      invoiceAt({ name: 'TH Demo', address: null }),
       receiptOf({
         description:
           'Chương trình giáo dục AI và STEM năm học 2026-2027 (7 tháng)',
@@ -266,7 +266,7 @@ describe('ViettelSinvoiceMapper theo mẫu hóa đơn của trường', () => {
 
     expect(payload.buyerInfo).toMatchObject({
       buyerName: 'Nguyễn Văn B',
-      buyerAddressLine: 'Lớp 1A1, Trường TH Lê Ngọc Hân, Tây Ninh',
+      buyerAddressLine: 'Lớp 1A1, Trường TH Demo, Tỉnh Mẫu',
       buyerIdNo: '079123456789',
     });
     expect(payload.itemInfo).toEqual([

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { isAxiosError } from 'axios';
+import type { AxiosResponse } from 'axios';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,6 +23,7 @@ export interface GenerateQrResult {
   merchantId: string;
   clientDt: string;
   status: { statusCode: string; statusDesc?: string };
+  signature: string;
   data?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -76,7 +78,7 @@ export class ViettinbankApiService {
       requestId + providerId + merchantId + clientDt + input.accountNumber;
     body.signature = this.signWithPrivateKey(signDataString, privateKeyPath);
 
-    let res;
+    let res: AxiosResponse<GenerateQrResult>;
     try {
       res = await axios.post<GenerateQrResult>(baseUrl, body, {
         headers: {
@@ -113,7 +115,7 @@ export class ViettinbankApiService {
       publicKeyPath &&
       !this.verifyWithPublicKey(
         verifyData,
-        responseData.signature as unknown as string,
+        responseData.signature,
         publicKeyPath,
       )
     ) {

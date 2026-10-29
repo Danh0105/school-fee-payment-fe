@@ -204,12 +204,11 @@ async function run() {
       skip: 0,
     });
     let feeCategory: FeeCategory | undefined = feeCategories.data.find(
-      (c) => c.code === 'KNS',
+      (c) => c.name === 'Kỹ năng sống',
     );
     if (!feeCategory) {
       feeCategory = await feeCategoriesService.create({
         schoolId: school.id,
-        code: 'KNS',
         name: 'Kỹ năng sống',
         description: 'Chương trình giáo dục kỹ năng sống',
       });
@@ -223,7 +222,9 @@ async function run() {
       skip: 0,
     });
     let feePlan: FeePlan | undefined = feePlans.data.find(
-      (p) => p.code === 'KNS-2627',
+      (p) =>
+        p.feeCategoryId === feeCategory.id &&
+        p.academicYearId === academicYear.id,
     );
     if (!feePlan) {
       feePlan = await feePlansService.create({

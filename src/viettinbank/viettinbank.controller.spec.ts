@@ -75,7 +75,7 @@ describe('ViettinbankController', () => {
     it('trả về mã 01 khi chữ ký sai', async () => {
       const verify = jest.fn().mockReturnValue(false);
       const controller = makeController({ verify });
-      const dto = { header: baseHeader, data: baseData } as InqBillRequestDto;
+      const dto = { header: baseHeader, data: baseData };
 
       const res = await controller.inqBill(dto);
 
@@ -89,7 +89,7 @@ describe('ViettinbankController', () => {
     it('trả về mã 02 khi không tìm thấy hóa đơn/mã KH', async () => {
       const findByTransferContent = jest.fn().mockResolvedValue(null);
       const controller = makeController({ findByTransferContent });
-      const dto = { header: baseHeader, data: baseData } as InqBillRequestDto;
+      const dto = { header: baseHeader, data: baseData };
 
       const res = await controller.inqBill(dto);
 
@@ -109,7 +109,7 @@ describe('ViettinbankController', () => {
       const dto = {
         header: baseHeader,
         data: dataWithVac,
-      } as InqBillRequestDto;
+      };
 
       await controller.inqBill(dto);
 
@@ -124,7 +124,7 @@ describe('ViettinbankController', () => {
         expiresAt: null,
       });
       const controller = makeController({ findByTransferContent });
-      const dto = { header: baseHeader, data: baseData } as InqBillRequestDto;
+      const dto = { header: baseHeader, data: baseData };
 
       const res = await controller.inqBill(dto);
 
@@ -139,7 +139,7 @@ describe('ViettinbankController', () => {
         expiresAt: new Date(Date.now() - 1000),
       });
       const controller = makeController({ findByTransferContent });
-      const dto = { header: baseHeader, data: baseData } as InqBillRequestDto;
+      const dto = { header: baseHeader, data: baseData };
 
       const res = await controller.inqBill(dto);
 
@@ -154,7 +154,7 @@ describe('ViettinbankController', () => {
         expiresAt: null,
       });
       const controller = makeController({ findByTransferContent });
-      const dto = { header: baseHeader, data: baseData } as InqBillRequestDto;
+      const dto = { header: baseHeader, data: baseData };
 
       const res = await controller.inqBill(dto);
 
@@ -175,7 +175,7 @@ describe('ViettinbankController', () => {
         expiresAt: null,
       });
       const controller = makeController({ findByTransferContent });
-      const dto = { header: baseHeader, data: baseData } as InqBillRequestDto;
+      const dto = { header: baseHeader, data: baseData };
 
       const res = await controller.inqBill(dto);
 

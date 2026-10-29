@@ -27,7 +27,7 @@ export class CreateFeePlanDto {
   @ApiProperty({
     example: '9',
     description:
-      'Number of months for the whole school year (e.g. 9). Use 1 for a one-time, non-recurring fee. A value above 1 bills across HK1/HK2 (half each) instead of the full year at once.',
+      'Số lượng của cả năm học. defaultAmount = unitPrice × quantity; khi gán, tổng này luôn được chia chính xác thành HK1 và HK2.',
   })
   @IsNumberString()
   quantity: string;

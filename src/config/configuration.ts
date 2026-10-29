@@ -45,10 +45,6 @@ export default () => ({
     bankCode: process.env.BANK_CODE ?? '',
     bankAccountNumber: process.env.BANK_ACCOUNT_NUMBER ?? '',
     bankAccountName: process.env.BANK_ACCOUNT_NAME ?? '',
-    orderExpiresMinutes: parseInt(
-      process.env.PAYMENT_ORDER_EXPIRES_MINUTES ?? '60',
-      10,
-    ),
     webhookSecret: process.env.PAYMENT_WEBHOOK_SECRET ?? '',
   },
 

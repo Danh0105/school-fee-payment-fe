@@ -78,6 +78,8 @@ describe('ImportsService confirm of a payment list', () => {
     validRows: Array.from({ length: rows }, (_, index) => ({
       rowNumber: index + 2,
       originalAmount: '560000.00',
+      className: '1A1',
+      fullName: `Học sinh ${index + 1}`,
     })),
     bootstrapContext: null,
     paymentOptions: { createPaymentOrders: true },
@@ -175,6 +177,11 @@ describe('ImportsService confirm of a payment list', () => {
     expect(maxInFlight()).toBeLessThanOrEqual(5);
     // Rows not yet started when the bank failed are not sent.
     expect(paymentOrders.prepareOrderQr.mock.calls.length).toBeLessThan(12);
+    expect(paymentOrders.prepareOrderQr).toHaveBeenCalledWith(
+      expect.anything(),
+      'CONG TY',
+      'Trường A - Lớp 1A1 - Học sinh 1',
+    );
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 });

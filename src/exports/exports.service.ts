@@ -39,7 +39,7 @@ export class ExportsService {
         code: r.receivableCode,
         studentCode: r.student.studentCode,
         fullName: r.student.fullName,
-        feePlan: r.feePlan.name,
+        feePlan: r.feePlan.feeCategory?.name ?? r.feePlan.name,
         amountDue: r.amountDue.toFixed(2),
         amountPaid: r.amountPaid.toFixed(2),
         amountOutstanding: r.amountOutstanding.toFixed(2),

@@ -6,6 +6,9 @@ export interface CreateQrInput {
   bankAccountNumber: string;
   bankAccountName: string;
   amount: Decimal;
+  /** Human-readable bank transfer message; defaults to transferContent. */
+  paymentContent?: string;
+  /** Internal reconciliation key (VAV/order code), not necessarily the message. */
   transferContent: string;
 }
 

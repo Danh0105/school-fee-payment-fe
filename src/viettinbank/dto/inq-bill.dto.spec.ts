@@ -67,9 +67,13 @@ describe('InqBillRequestDto validation (forbidNonWhitelisted)', () => {
       },
     };
 
-    const instance = plainToInstance(InqBillRequestDto, payloadWithUnknownField, {
-      excludeExtraneousValues: false,
-    });
+    const instance = plainToInstance(
+      InqBillRequestDto,
+      payloadWithUnknownField,
+      {
+        excludeExtraneousValues: false,
+      },
+    );
     const errors = await validate(instance, {
       whitelist: true,
       forbidNonWhitelisted: true,

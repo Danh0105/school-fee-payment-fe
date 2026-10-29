@@ -6,7 +6,6 @@ import {
   QueryFailedError,
   Repository,
 } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import Decimal from 'decimal.js';
 import { PaymentOrder } from './entities/payment-order.entity';
 import { PaymentOrderItem } from './entities/payment-order-item.entity';
@@ -43,7 +42,6 @@ export class PaymentOrdersService {
     private readonly studentsService: StudentsService,
     private readonly paymentProvidersService: PaymentProvidersService,
     private readonly sequenceService: SequenceService,
-    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -189,10 +187,6 @@ export class PaymentOrdersService {
       }
     }
 
-    const expiresMinutes =
-      this.config.get<number>('payment.orderExpiresMinutes') ?? 60;
-    const expiresAt = new Date(now.getTime() + expiresMinutes * 60_000);
-
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PaymentOrder);
       const itemRepo = manager.getRepository(PaymentOrderItem);
@@ -209,7 +203,9 @@ export class PaymentOrdersService {
         transferContent,
         qrPayload,
         qrUrl,
-        expiresAt,
+        // A payment QR remains valid until the order is paid or explicitly
+        // cancelled. null is the persisted representation of no expiry.
+        expiresAt: null,
         createdBy: userId ?? null,
         invoiceEmail: options.invoiceEmail ?? null,
         clientRequestId: options.clientRequestId ?? null,
@@ -232,7 +228,15 @@ export class PaymentOrdersService {
   async findById(id: string): Promise<PaymentOrder> {
     const order = await this.repo.findOne({
       where: { id },
-      relations: { items: { receivable: true }, student: true },
+      relations: {
+        items: {
+          receivable: {
+            semester: true,
+            feePlan: { feeCategory: true, academicYear: true },
+          },
+        },
+        student: true,
+      },
     });
     if (!order) throw AppException.notFound(ErrorCode.PAYMENT_ORDER_NOT_FOUND);
     return order;
@@ -258,6 +262,7 @@ export class PaymentOrdersService {
     qrUrl: string | null;
     expiresAt: Date | null;
     status: PaymentOrderStatus;
+    paymentMethod: PaymentMethod;
   }> {
     const order = await this.findById(id);
     if (
@@ -273,6 +278,10 @@ export class PaymentOrdersService {
       qrUrl: order.qrUrl,
       expiresAt: order.expiresAt,
       status: order.status,
+      // QR consumers need this field to distinguish VietinBank's dynamic
+      // virtual-account QR from the legacy static VietQR response. Returning
+      // it here also avoids making the client infer the method from qrUrl.
+      paymentMethod: order.paymentMethod,
     };
   }
 }

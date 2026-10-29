@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { PaymentMethod } from '../common/enums/status.enum';
 import { ParentPortalController } from './parent-portal.controller';
 
@@ -6,7 +5,7 @@ describe('ParentPortalController tạo đơn: phương thức QR', () => {
   const parent = { studentId: 'student-id' } as never;
   const items = [{ receivableId: 'receivable-id' }];
 
-  function build(defaultProvider?: string) {
+  function build() {
     const paymentOrdersService = {
       create: jest.fn().mockResolvedValue({
         id: 'order-id',
@@ -22,7 +21,6 @@ describe('ParentPortalController tạo đơn: phương thức QR', () => {
       {} as never,
       paymentOrdersService as never,
       einvoiceService as never,
-      new ConfigService({ payment: { defaultProvider } }),
     );
     const methodSent = () =>
       (
@@ -33,10 +31,10 @@ describe('ParentPortalController tạo đơn: phương thức QR', () => {
     return { controller, methodSent };
   }
 
-  it.each([PaymentMethod.VIETQR, undefined])(
-    'PAYMENT_PROVIDER=VIETINBANK: phụ huynh gửi %s → đơn dùng QR VietinBank để được báo tự động',
+  it.each([PaymentMethod.VIETQR, PaymentMethod.BANK_TRANSFER, undefined])(
+    'phụ huynh gửi %s → luôn tạo QR tài khoản ảo VietinBank',
     async (requested) => {
-      const { controller, methodSent } = build('VIETINBANK');
+      const { controller, methodSent } = build();
       await controller.createPaymentOrder(
         { items, paymentMethod: requested },
         parent,
@@ -45,17 +43,17 @@ describe('ParentPortalController tạo đơn: phương thức QR', () => {
     },
   );
 
-  it('PAYMENT_PROVIDER=VIETQR: giữ nguyên phương thức phụ huynh gửi', async () => {
-    const { controller, methodSent } = build('VIETQR');
+  it('giữ nguyên yêu cầu VIETINBANK của phụ huynh', async () => {
+    const { controller, methodSent } = build();
     await controller.createPaymentOrder(
-      { items, paymentMethod: PaymentMethod.VIETQR },
+      { items, paymentMethod: PaymentMethod.VIETINBANK },
       parent,
     );
-    expect(methodSent()).toBe(PaymentMethod.VIETQR);
+    expect(methodSent()).toBe(PaymentMethod.VIETINBANK);
   });
 
   it('phương thức không phải QR (tiền mặt) không bị đổi', async () => {
-    const { controller, methodSent } = build('VIETINBANK');
+    const { controller, methodSent } = build();
     await controller.createPaymentOrder(
       { items, paymentMethod: PaymentMethod.CASH },
       parent,
@@ -72,7 +70,6 @@ describe('ParentPortalController tạo đơn: phương thức QR', () => {
       {} as never,
       paymentOrdersService as never,
       { summaryForPaymentOrder: jest.fn().mockResolvedValue(null) } as never,
-      new ConfigService({}),
     );
     await controller.createPaymentOrder({ items }, parent);
     expect(paymentOrdersService.create).toHaveBeenCalledWith(

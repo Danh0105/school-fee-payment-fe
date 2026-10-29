@@ -154,7 +154,7 @@ describe('ExcelParserService student contact columns', () => {
       '072220003363',
       560000,
       'Nguyễn Văn A',
-      'Lớp 1A1, Trường TH Lê Ngọc Hân',
+      'Lớp 1A1, Trường TH Demo',
       '072220003363',
       'Chương trình AI và STEM năm học 2026-2027 (7 tháng)',
       'Học sinh',
@@ -169,7 +169,7 @@ describe('ExcelParserService student contact columns', () => {
     expect(row.values).toMatchObject({
       paymentAmount: '560000',
       buyerName: 'Nguyễn Văn A',
-      buyerAddress: 'Lớp 1A1, Trường TH Lê Ngọc Hân',
+      buyerAddress: 'Lớp 1A1, Trường TH Demo',
       buyerIdNo: '072220003363',
       serviceName: 'Chương trình AI và STEM năm học 2026-2027 (7 tháng)',
       unitName: 'Học sinh',

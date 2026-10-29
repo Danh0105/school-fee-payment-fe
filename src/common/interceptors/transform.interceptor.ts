@@ -23,7 +23,7 @@ export class TransformInterceptor<T> implements NestInterceptor<
 
   intercept(
     context: ExecutionContext,
-    next: CallHandler,
+    next: CallHandler<T>,
   ): Observable<ApiResponse<T> | T> {
     const isRaw = this.reflector.getAllAndOverride<boolean>(RAW_RESPONSE_KEY, [
       context.getHandler(),

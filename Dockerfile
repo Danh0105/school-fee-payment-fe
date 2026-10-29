@@ -11,5 +11,6 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/sites/qr-import-admin/dist ./sites/qr-import-admin/dist
 EXPOSE 3010
 CMD ["node", "dist/main.js"]

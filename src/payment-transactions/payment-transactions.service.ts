@@ -16,6 +16,7 @@ import { ErrorCode } from '../common/constants/error-codes';
 import { applySchoolScope } from '../common/utils/school-scope.util';
 import {
   PaymentOrderStatus,
+  PaymentProviderCode,
   PaymentTransactionStatus,
   ReconciliationStatus,
 } from '../common/enums/status.enum';
@@ -129,12 +130,25 @@ export class PaymentTransactionsService {
           })
         : null;
 
-      const matchable =
+      const orderCanReceivePayment =
         order &&
         [
           PaymentOrderStatus.PENDING,
           PaymentOrderStatus.PARTIALLY_PAID,
         ].includes(order.status);
+      const requiresExactAmount = [
+        PaymentProviderCode.VIETQR,
+        PaymentProviderCode.VIETINBANK,
+      ].includes(provider.code);
+      const amountMatches =
+        !order || transaction.amount.equals(order.requestedAmount);
+      const amountMismatch =
+        Boolean(orderCanReceivePayment) &&
+        requiresExactAmount &&
+        !amountMatches;
+      const matchable =
+        Boolean(orderCanReceivePayment) &&
+        (!requiresExactAmount || amountMatches);
 
       if (matchable && order) {
         await reconciliationRepo.save(
@@ -192,8 +206,12 @@ export class PaymentTransactionsService {
       await reconciliationRepo.save(
         reconciliationRepo.create({
           paymentTransactionId: transaction.id,
-          paymentOrderId: null,
+          paymentOrderId: amountMismatch && order ? order.id : null,
           status: ReconciliationStatus.UNMATCHED,
+          note:
+            amountMismatch && order
+              ? `Số tiền giao dịch ${transaction.amount.toFixed(0)} không khớp số tiền yêu cầu ${order.requestedAmount.toFixed(0)}`
+              : null,
         }),
       );
       if (actorUserId) {

@@ -45,12 +45,20 @@ export class ReceivablesService {
     return manager ? manager.getRepository(StudentReceivable) : this.repo;
   }
 
-  /** Creates one receivable and posts the corresponding RECEIVABLE debit ledger entry. Idempotent per (studentId, feePlanId, semesterId) — a MONTHLY plan calls this once per semester to split billing across HK1/HK2. */
+  /** Creates one semester receivable and its debit ledger entry. Idempotent per (studentId, feePlanId, semesterId). */
   async createIfNotExists(
     input: CreateReceivableInput,
     manager: EntityManager,
   ): Promise<StudentReceivable | null> {
     const repo = this.repoFor(manager);
+    // Serialize concurrent assignments for the same business key before the
+    // existence check. The database unique index remains the final guard;
+    // this lock also lets the losing request return a clean idempotent skip
+    // instead of surfacing a unique-constraint error.
+    await manager.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      [`${input.studentId}:${input.feePlanId}:${input.semesterId ?? 'YEAR'}`],
+    );
     const existing = await repo.findOne({
       where: {
         studentId: input.studentId,
@@ -80,6 +88,10 @@ export class ReceivablesService {
       feePlanId: input.feePlanId,
       receivableCode,
       description: input.description ?? null,
+      invoiceBuyerName: input.invoiceBuyerName ?? null,
+      invoiceBuyerAddress: input.invoiceBuyerAddress ?? null,
+      invoiceBuyerIdNo: input.invoiceBuyerIdNo ?? null,
+      invoiceUnitName: input.invoiceUnitName ?? null,
       quantity: input.quantity,
       unitPrice: input.unitPrice,
       originalAmount,
@@ -88,10 +100,6 @@ export class ReceivablesService {
       amountDue: originalAmount,
       amountPaid: new Decimal(0),
       amountOutstanding: originalAmount,
-      invoiceBuyerName: input.invoiceBuyerName ?? null,
-      invoiceBuyerAddress: input.invoiceBuyerAddress ?? null,
-      invoiceBuyerIdNo: input.invoiceBuyerIdNo ?? null,
-      invoiceUnitName: input.invoiceUnitName ?? null,
       dueDate: input.dueDate ?? null,
       status: ReceivableStatus.UNPAID,
       createdBy: input.createdBy ?? null,
@@ -123,6 +131,9 @@ export class ReceivablesService {
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.student', 'student')
       .leftJoinAndSelect('r.feePlan', 'feePlan')
+      .leftJoinAndSelect('feePlan.feeCategory', 'feeCategory')
+      .leftJoinAndSelect('feePlan.academicYear', 'academicYear')
+      .leftJoinAndSelect('r.semester', 'semester')
       .orderBy(`r.${query.sortBy ?? 'createdAt'}`, query.sortOrder ?? 'DESC');
 
     if (!applySchoolScope(qb, 'r.schoolId', scopedIds ?? null)) {
@@ -177,7 +188,11 @@ export class ReceivablesService {
     const repo = this.repoFor(manager);
     const entity = await repo.findOne({
       where: { id },
-      relations: { student: true, feePlan: true },
+      relations: {
+        student: true,
+        semester: true,
+        feePlan: { feeCategory: true, academicYear: true },
+      },
     });
     if (!entity) throw AppException.notFound(ErrorCode.RECEIVABLE_NOT_FOUND);
     return entity;
@@ -186,7 +201,10 @@ export class ReceivablesService {
   async findByStudent(studentId: string): Promise<StudentReceivable[]> {
     return this.repo.find({
       where: { studentId },
-      relations: { feePlan: true },
+      relations: {
+        semester: true,
+        feePlan: { feeCategory: true, academicYear: true },
+      },
       order: { createdAt: 'ASC' },
     });
   }

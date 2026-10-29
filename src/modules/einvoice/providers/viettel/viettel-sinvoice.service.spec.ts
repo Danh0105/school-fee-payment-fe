@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment */
 import { ConfigService } from '@nestjs/config';
 import { ViettelInvoicePayloadDto } from './dto/invoice-payload.dto';
+import { ViettelSinvoiceException } from './exceptions/viettel-sinvoice.exception';
 import { ViettelSinvoiceHttpService } from './viettel-sinvoice-http.service';
 import { ViettelSinvoiceService } from './viettel-sinvoice.service';
 
@@ -165,6 +166,114 @@ describe('ViettelSinvoiceService', () => {
         payload.generalInvoiceInfo.transactionUuid,
       ),
     ).resolves.toEqual({ invoiceNo: '' });
+  });
+
+  it('7.21 lỗi 5xx thì tìm hóa đơn đã phát hành qua danh sách 7.6', async () => {
+    (http.request as jest.Mock)
+      .mockRejectedValueOnce(
+        new ViettelSinvoiceException(
+          'VIETTEL_5XX',
+          500,
+          null,
+          'GENERAL',
+          'searchInvoiceByTransactionUuid',
+          payload.generalInvoiceInfo.transactionUuid,
+          true,
+        ),
+      )
+      .mockResolvedValueOnce({
+        errorCode: null,
+        totalRows: 1,
+        invoices: [
+          {
+            invoiceNo: 'C26TIS16096',
+            issueDateStr: '2026-10-28T08:09:12Z',
+            transactionUuid: payload.generalInvoiceInfo.transactionUuid,
+          },
+        ],
+      });
+
+    await expect(
+      service.getInvoiceByTransactionUuid(
+        '0316660845',
+        payload.generalInvoiceInfo.transactionUuid,
+      ),
+    ).resolves.toMatchObject({
+      invoiceNo: 'C26TIS16096',
+      issueDate: '2026-10-28T08:09:12Z',
+      exists: true,
+    });
+    expect(http.request).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        endpoint: expect.objectContaining({
+          path: 'InvoiceAPI/InvoiceUtilsWS/getInvoices/{supplierTaxCode}',
+        }),
+        data: expect.objectContaining({
+          pageNum: 1,
+          rowPerPage: 1000,
+        }),
+      }),
+    );
+  });
+
+  it('7.21 lỗi 5xx và 7.6 chỉ thấy nháp thì vẫn nhận diện bản ghi Viettel', async () => {
+    (http.request as jest.Mock)
+      .mockRejectedValueOnce(
+        new ViettelSinvoiceException(
+          'VIETTEL_5XX',
+          500,
+          null,
+          'GENERAL',
+          'searchInvoiceByTransactionUuid',
+          payload.generalInvoiceInfo.transactionUuid,
+          true,
+        ),
+      )
+      .mockResolvedValueOnce({
+        totalRows: 1,
+        invoices: [
+          {
+            invoiceNo: 'C26TIS',
+            transactionUuid: payload.generalInvoiceInfo.transactionUuid,
+          },
+        ],
+      });
+
+    await expect(
+      service.getInvoiceByTransactionUuid(
+        '0316660845',
+        payload.generalInvoiceInfo.transactionUuid,
+      ),
+    ).resolves.toEqual({
+      invoiceNo: '',
+      reservationCode: undefined,
+      codeOfTax: undefined,
+      issueDate: undefined,
+      exists: true,
+    });
+  });
+
+  it('7.21 lỗi 5xx nhưng 7.6 hoạt động và không thấy UUID thì báo lookup suy giảm', async () => {
+    (http.request as jest.Mock)
+      .mockRejectedValueOnce(
+        new ViettelSinvoiceException(
+          'VIETTEL_5XX',
+          500,
+          null,
+          'GENERAL',
+          'searchInvoiceByTransactionUuid',
+          payload.generalInvoiceInfo.transactionUuid,
+          true,
+        ),
+      )
+      .mockResolvedValueOnce({ totalRows: 0, invoices: [] });
+
+    await expect(
+      service.getInvoiceByTransactionUuid(
+        '0316660845',
+        payload.generalInvoiceInfo.transactionUuid,
+      ),
+    ).resolves.toEqual({ invoiceNo: '', lookupDegraded: true });
   });
 
   it.each(['PDF', 'ZIP'] as const)('lấy file %s', async (fileType) => {

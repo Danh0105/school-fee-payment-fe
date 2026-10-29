@@ -13,14 +13,13 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
 import {
-  BillingType,
   FeeAssignmentTargetType,
   FeePlanStatus,
 } from '../common/enums/status.enum';
 
 interface ReceivableSlot {
-  semesterId: string | null;
-  quantity: Decimal;
+  semesterId: string;
+  amount: Decimal;
   description: string;
   dueDate: string | null;
 }
@@ -132,8 +131,8 @@ export class FeeAssignmentsService {
               semesterId: slot.semesterId,
               feePlanId: feePlan.id,
               description: slot.description,
-              quantity: slot.quantity,
-              unitPrice: feePlan.unitPrice,
+              quantity: new Decimal(1),
+              unitPrice: slot.amount,
               dueDate: slot.dueDate,
               createdBy: actor.userId,
             },
@@ -170,36 +169,21 @@ export class FeeAssignmentsService {
     });
   }
 
-  /**
-   * A ONE_TIME plan produces a single receivable for its full amount. A
-   * MONTHLY plan represents a whole-year fee that parents may pay per
-   * semester, so it's split into one receivable per HK1/HK2, each for half
-   * the quantity — the parent can then pay one semester's receivable (and
-   * the other stays recorded as outstanding công nợ) or both to cover the
-   * year in a single payment order.
-   */
+  /** Every fee plan is annual and always produces exactly HK1 + HK2 debt. */
   private async resolveReceivableSlots(
     feePlan: FeePlan,
   ): Promise<ReceivableSlot[]> {
-    if (feePlan.billingType === BillingType.ONE_TIME) {
-      return [
-        {
-          semesterId: feePlan.semesterId,
-          quantity: feePlan.quantity,
-          description: feePlan.name,
-          dueDate: feePlan.dueDate,
-        },
-      ];
-    }
-
     const semesters = await this.semestersService.findPairByAcademicYear(
       feePlan.academicYearId,
     );
-    const halfQuantity = feePlan.quantity.dividedBy(2);
-    return semesters.map((semester) => ({
+    const firstAmount = feePlan.defaultAmount
+      .dividedBy(2)
+      .toDecimalPlaces(0, Decimal.ROUND_DOWN);
+    const amounts = [firstAmount, feePlan.defaultAmount.minus(firstAmount)];
+    return semesters.map((semester, index) => ({
       semesterId: semester.id,
-      quantity: halfQuantity,
-      description: `${feePlan.name} - ${semester.name}`,
+      amount: amounts[index],
+      description: `${feePlan.feeCategory.name} - ${semester.name}`,
       dueDate: semester.endDate,
     }));
   }

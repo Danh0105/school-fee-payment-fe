@@ -51,7 +51,7 @@ interface ListRow {
 const ITEM_NAME =
   'Chương trình giáo dục Trí tuệ nhân tạo (AI) và STEM ICHI SKILL năm học 2026-2027 (7 tháng)';
 const BUYER_ADDRESS =
-  'Lớp 3A4 Trường TH Lê Ngọc Hân, Phường Bình Minh, Tỉnh Tây Ninh';
+  'Lớp 3A4 Trường TH Demo, Phường Mẫu, Tỉnh Mẫu';
 
 /** A workbook laid out like the school's list: title row, header row 2. */
 async function listWorkbook(rows: ListRow[]): Promise<Buffer> {

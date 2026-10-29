@@ -11,7 +11,10 @@ import { PaymentProviderCode } from '../../common/enums/status.enum';
 import { CryptoKeyService } from '../../viettinbank/crypto-key.service';
 import { ViettinbankApiService } from '../../viettinbank/viettinbank-api.service';
 import { toSafeString } from '../../common/utils/stringify.util';
-import { buildVietQrImageUrl } from '../../common/utils/vietqr.util';
+import {
+  buildVietQrImageUrl,
+  toVietQrText,
+} from '../../common/utils/vietqr.util';
 
 /** NAPAS bank BIN for VietinBank, used only to render a scannable QR image via img.vietqr.io. */
 const VIETINBANK_BIN = '970415';
@@ -67,17 +70,25 @@ export class ViettinbankProvider implements PaymentProvider {
     input: CreateQrInput,
   ): Promise<CreateQrResult & { raw: Record<string, unknown> }> {
     const account = this.config.get<string>('viettinbank.account') ?? '';
+    const accountOnly = this.config.get<boolean>('viettinbank.accountOnly');
     // VIETINBANK_ACCOUNT_ONLY: the QR carries the bare VAC; the order code
     // then travels only in the transfer content (purposeOfTrans).
-    const accountNumber = this.config.get<boolean>('viettinbank.accountOnly')
+    const accountNumber = accountOnly
       ? account
       : `${account}${input.transferContent}`;
+    // With a full VAC+VAV account, reconciliation uses the VAV while the QR
+    // message can stay readable. Account-only mode must retain the internal
+    // key in the message because there is no VAV to recover from custCode.
+    const purposeOfTrans =
+      !accountOnly && input.paymentContent?.trim()
+        ? toVietQrText(input.paymentContent)
+        : input.transferContent;
     const raw = await this.api.generateQr({
       accountNumber,
       amount: input.amount.toNumber(),
-      purposeOfTrans: input.transferContent,
+      purposeOfTrans,
     });
-    const data = (raw.data ?? {}) as Record<string, unknown>;
+    const data = raw.data ?? {};
 
     // The bank's own response only carries a base64-encoded EMV/VietQR
     // string (doc §2.1: "data.base64QRCode ... đối tác nhận được mã base64
@@ -95,7 +106,7 @@ export class ViettinbankProvider implements PaymentProvider {
           bankBin: VIETINBANK_BIN,
           accountNumber,
           amount: input.amount.toFixed(0),
-          addInfo: input.transferContent,
+          addInfo: purposeOfTrans,
           merchantName: input.bankAccountName,
         })
       : null;
@@ -111,7 +122,13 @@ export class ViettinbankProvider implements PaymentProvider {
     const signature = rawBody.signature;
     if (typeof signature !== 'string' || !signature) return false;
 
-    const n = (v: unknown) => (v === null || v === undefined ? '' : String(v));
+    const n = (v: unknown) =>
+      typeof v === 'string' ||
+      typeof v === 'number' ||
+      typeof v === 'boolean' ||
+      typeof v === 'bigint'
+        ? String(v)
+        : '';
     const verifyData =
       n(rawBody.transId) +
       n(rawBody.transTime) +

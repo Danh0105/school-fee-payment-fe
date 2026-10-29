@@ -26,7 +26,6 @@ import { CreateParentPaymentOrderDto } from './dto/create-parent-payment-order.d
 import { EInvoiceService } from '../modules/einvoice/einvoice.service';
 import { ParentEInvoiceSummaryDto } from '../modules/einvoice/dto/parent-einvoice-summary.dto';
 import { PaymentOrder } from '../payment-orders/entities/payment-order.entity';
-import { ConfigService } from '@nestjs/config';
 import { PaymentMethod } from '../common/enums/status.enum';
 
 const RECEIVABLE_EXAMPLE = '7d4f0c1e-3b8a-4f5e-9c2d-1a6b8e9f0a12';
@@ -48,20 +47,18 @@ export class ParentPortalController {
     private readonly receivablesService: ReceivablesService,
     private readonly paymentOrdersService: PaymentOrdersService,
     private readonly einvoiceService: EInvoiceService,
-    private readonly config: ConfigService,
   ) {}
 
   /**
-   * Parents do not pick the gateway. With PAYMENT_PROVIDER=VIETINBANK a QR
-   * payment gets VietinBank's virtual-account QR, which VietinBank reports
-   * through notify-bill so the debt is cleared automatically; a static
-   * VietQR to the school's own account is never reported back.
+   * Parent QR orders always use VietinBank's virtual account. Never let the
+   * global default provider or a legacy VIETQR client request silently switch
+   * parents back to a QR targeting the school's main bank account.
    */
   private qrMethodFor(requested?: PaymentMethod): PaymentMethod | undefined {
-    const preferred = this.config.get<string>('payment.defaultProvider');
     if (
-      preferred === PaymentMethod.VIETINBANK &&
-      (requested === undefined || requested === PaymentMethod.VIETQR)
+      requested === undefined ||
+      requested === PaymentMethod.VIETQR ||
+      requested === PaymentMethod.BANK_TRANSFER
     ) {
       return PaymentMethod.VIETINBANK;
     }
@@ -101,7 +98,7 @@ export class ParentPortalController {
         summary: 'Không yêu cầu hóa đơn điện tử',
         value: {
           items: [{ receivableId: RECEIVABLE_EXAMPLE }],
-          paymentMethod: 'VIETQR',
+          paymentMethod: 'VIETINBANK',
         },
       },
       withInvoice: {
@@ -110,7 +107,7 @@ export class ParentPortalController {
           'Hóa đơn được phát hành sau khi thanh toán được xác nhận và gửi tới invoice.email. Response có thêm eInvoice.',
         value: {
           items: [{ receivableId: RECEIVABLE_EXAMPLE }],
-          paymentMethod: 'VIETQR',
+          paymentMethod: 'VIETINBANK',
           invoice: { email: 'phuhuynh@example.com' },
         },
       },

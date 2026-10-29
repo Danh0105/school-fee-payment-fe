@@ -158,9 +158,17 @@ export class SearchInvoicesDto {
   @IsOptional() @IsString() invoiceNo?: string;
   @IsOptional() @IsString() invoiceType?: string;
   @IsOptional() @IsString() buyerTaxCode?: string;
+  @IsOptional() @IsString() buyerIdNo?: string;
   @IsOptional() @IsString() templateCode?: string;
-  @IsOptional() @IsString() series?: string;
+  @IsOptional() @IsString() invoiceSeri?: string;
   @IsOptional() @IsString() adjustmentType?: string;
+  /** Viettel 7.6 requires ISO calendar dates (yyyy-MM-dd). */
+  @IsOptional() @IsString() startDate?: string;
+  @IsOptional() @IsString() endDate?: string;
+  @IsOptional() @IsNumber() pageNum?: number;
+  @IsOptional() @IsNumber() rowPerPage?: number;
+  @IsOptional() @IsBoolean() getAll?: boolean;
+  // Kept for the other list endpoint variants exposed by the provider.
   @IsOptional() @IsString() fromDate?: string;
   @IsOptional() @IsString() toDate?: string;
   @IsOptional() @IsNumber() start?: number;

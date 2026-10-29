@@ -1,5 +1,9 @@
 import Decimal from 'decimal.js';
-import { ImportPaymentQrPdfService } from './import-payment-qr-pdf.service';
+import {
+  ImportPaymentQrPdfService,
+  paymentSlipContent,
+  paymentSlipQrPayload,
+} from './import-payment-qr-pdf.service';
 import {
   ImportSession,
   ImportSessionStatus,
@@ -8,7 +12,66 @@ import {
 } from './entities/import-session.entity';
 import { StudentStatus } from '../common/enums/status.enum';
 
+function tlvFields(value: string): Map<string, string> {
+  const bytes = Buffer.from(value, 'utf8');
+  const fields = new Map<string, string>();
+  let offset = 0;
+  while (offset + 4 <= bytes.length) {
+    const id = bytes.subarray(offset, offset + 2).toString('ascii');
+    const length = Number(
+      bytes.subarray(offset + 2, offset + 4).toString('ascii'),
+    );
+    if (!Number.isInteger(length) || offset + 4 + length > bytes.length) break;
+    fields.set(
+      id,
+      bytes.subarray(offset + 4, offset + 4 + length).toString('utf8'),
+    );
+    offset += 4 + length;
+  }
+  return fields;
+}
+
 describe('ImportPaymentQrPdfService', () => {
+  it('prints school, class and student name without diacritics as the payment content', () => {
+    const content = paymentSlipContent(
+      'Trường Tiểu học Võ Thị Sáu',
+      'Lớp 3A4',
+      'Phan Dương Linh Đan',
+    );
+    expect(content).toBe(
+      'Truong Tieu hoc Vo Thi Sau - Lop 3A4 - Phan Duong Linh Dan',
+    );
+
+    const payload = paymentSlipQrPayload({
+      bankBin: '970415',
+      accountNumber: '1ICS261023000001',
+      accountName: 'CTCP GIAO DUC KHCN ICHI SKILL',
+      amount: new Decimal(560000),
+      content,
+      reusable: false,
+    });
+    const additionalData = tlvFields(payload).get('62');
+    expect(additionalData).toBeDefined();
+    expect(tlvFields(additionalData!).get('08')).toBe(content);
+  });
+
+  it('uses the exact VietinBank payload for a saved dynamic order', () => {
+    const bankIssuedPayload =
+      '00020101021238630010A0000007270133000697041501192ICS69D2610270004880208QRIBFTTA530370454065600005802VN62160812261027000488630432DB';
+
+    expect(
+      paymentSlipQrPayload({
+        bankBin: '970415',
+        accountNumber: '2ICS69D261027000488',
+        accountName: 'CTCP GIAO DUC KHCN ICHI SKILL',
+        amount: new Decimal(560000),
+        content: 'TH Demo - Lớp 1A1 - Học sinh có tên rất dài để tái hiện lỗi',
+        reusable: false,
+        storedQrPayload: bankIssuedPayload,
+      }),
+    ).toBe(bankIssuedPayload);
+  });
+
   const schoolRepository = {
     findOne: jest.fn().mockResolvedValue({
       id: 'school-1',

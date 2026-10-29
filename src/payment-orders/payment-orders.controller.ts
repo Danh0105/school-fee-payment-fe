@@ -15,6 +15,7 @@ import { AccessControlService } from '../access-control/access-control.service';
 import { StudentsService } from '../students/students.service';
 import { PaymentOrdersService } from './payment-orders.service';
 import { CreatePaymentOrderDto } from './dto/create-payment-order.dto';
+import { PaymentMethod } from '../common/enums/status.enum';
 
 @ApiTags('Payment Orders')
 @ApiBearerAuth()
@@ -34,7 +35,16 @@ export class PaymentOrdersController {
   ) {
     const student = await this.studentsService.findById(dto.studentId);
     await this.accessControlService.assertSchoolAccess(user, student.schoolId);
-    return this.service.create(dto, user.id);
+    // The staff UI still submits VIETQR for QR payments. Route those orders
+    // through VietinBank's virtual-account generator as well, so no new QR
+    // silently targets the school's main account.
+    const paymentMethod =
+      dto.paymentMethod === undefined ||
+      dto.paymentMethod === PaymentMethod.VIETQR ||
+      dto.paymentMethod === PaymentMethod.BANK_TRANSFER
+        ? PaymentMethod.VIETINBANK
+        : dto.paymentMethod;
+    return this.service.create({ ...dto, paymentMethod }, user.id);
   }
 
   @Get(':id')

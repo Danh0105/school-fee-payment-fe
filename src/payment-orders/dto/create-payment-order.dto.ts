@@ -5,6 +5,7 @@ import {
   IsArray,
   IsEnum,
   IsNumberString,
+  IsObject,
   IsOptional,
   IsUUID,
   ValidateNested,
@@ -40,4 +41,14 @@ export class CreatePaymentOrderDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;
+
+  @ApiPropertyOptional({
+    description:
+      'Legacy invoice metadata from older clients; ignored by payment order creation.',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  invoice?: Record<string, unknown>;
 }

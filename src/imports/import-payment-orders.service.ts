@@ -123,6 +123,7 @@ export class ImportPaymentOrdersService {
   async prepareOrderQr(
     amount: Decimal,
     payee: string,
+    paymentContent: string,
   ): Promise<PreparedOrderQr> {
     const now = new Date();
     const dateScope = `${now.getFullYear().toString().slice(2)}${String(
@@ -142,6 +143,7 @@ export class ImportPaymentOrdersService {
       bankAccountNumber: '',
       bankAccountName: payee,
       amount,
+      paymentContent,
       transferContent,
     });
     if (!qr.qrPayload) {

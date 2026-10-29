@@ -231,6 +231,31 @@ describe('ViettinbankProvider', () => {
       });
     });
 
+    it('dùng nội dung thanh toán làm lời nhắn nhưng giữ VAV trong số tài khoản', async () => {
+      const generateQr = jest.fn().mockResolvedValue({
+        data: { base64QRCode: sampleBase64QrCode },
+      });
+      const provider = makeProvider(jest.fn(), '1ICSPD0', generateQr);
+
+      const result = await provider.generateQr({
+        bankCode: 'ICB',
+        bankAccountNumber: '',
+        bankAccountName: 'Truong Tieu Hoc ABC',
+        amount: new Decimal('100000'),
+        transferContent: 'PAY260001',
+        paymentContent: 'TH Demo - Lớp 1A1 - Nguyễn Văn A',
+      });
+
+      expect(generateQr).toHaveBeenCalledWith({
+        accountNumber: '1ICSPD0PAY260001',
+        amount: 100000,
+        purposeOfTrans: 'TH Demo - Lop 1A1 - Nguyen Van A',
+      });
+      expect(result.qrUrl).toContain(
+        'addInfo=TH+Demo+-+Lop+1A1+-+Nguyen+Van+A',
+      );
+    });
+
     it('trả về qrPayload/qrUrl null khi bank không trả base64QRCode', async () => {
       const generateQr = jest.fn().mockResolvedValue({ data: {} });
       const provider = makeProvider(jest.fn(), '1ICSPD0', generateQr);

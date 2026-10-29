@@ -126,7 +126,6 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
 
     feeCategory = await feeCategoriesService.create({
       schoolId: school.id,
-      code: `FC${runId}`,
       name: 'Học phí test',
     });
   });
@@ -196,6 +195,22 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
     );
   }
 
+  async function payManually(
+    orderCode: string,
+    amount: number,
+    externalId: string,
+  ) {
+    return paymentTransactionsService.ingest(
+      'MANUAL_BANK',
+      {
+        externalTransactionId: externalId,
+        amount,
+        transferContent: orderCode,
+      },
+      {},
+    );
+  }
+
   it('Case 1: full payment (720,000) settles the receivable -> PAID', async () => {
     const { student, receivable } = await createReceivable('720000');
     const order = await paymentOrdersService.create(
@@ -223,7 +238,7 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
       userId,
     );
 
-    await payViaWebhook(order.orderCode, 300000, `CASE2-${runId}`);
+    await payManually(order.orderCode, 300000, `CASE2-${runId}`);
 
     const updated = await receivablesService.findById(receivable.id);
     expect(updated.amountPaid.toFixed(2)).toBe('300000.00');
@@ -238,7 +253,7 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
       userId,
     );
 
-    await payViaWebhook(order.orderCode, 800000, `CASE3-${runId}`);
+    await payManually(order.orderCode, 800000, `CASE3-${runId}`);
 
     const updated = await receivablesService.findById(receivable.id);
     expect(updated.amountPaid.toFixed(2)).toBe('720000.00');
@@ -246,6 +261,31 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
 
     const balance = await studentCreditsService.getAvailableBalance(student.id);
     expect(balance.toFixed(2)).toBe('80000.00');
+  });
+
+  it('VietQR amount mismatch stays UNMATCHED and does not change the receivable', async () => {
+    const { student, receivable } = await createReceivable('720000');
+    const order = await paymentOrdersService.create(
+      { studentId: student.id, items: [{ receivableId: receivable.id }] },
+      userId,
+    );
+
+    const result = await payViaWebhook(
+      order.orderCode,
+      800000,
+      `AMOUNT-MISMATCH-${runId}`,
+    );
+
+    expect(result.matched).toBe(false);
+    const transaction = await paymentTransactionsService.findById(
+      result.transactionId!,
+    );
+    expect(transaction.status).toBe(PaymentTransactionStatus.UNMATCHED);
+
+    const updated = await receivablesService.findById(receivable.id);
+    expect(updated.amountPaid.toFixed(2)).toBe('0.00');
+    expect(updated.amountOutstanding.toFixed(2)).toBe('720000.00');
+    expect(updated.status).toBe(ReceivableStatus.UNPAID);
   });
 
   it('Case 4: webhook delivered twice with the same transaction id -> exactly one PaymentTransaction', async () => {
@@ -311,11 +351,7 @@ describe('Accounting engine (e2e) — spec §52 mandatory cases', () => {
       { studentId: student.id, items: [{ receivableId: receivable.id }] },
       userId,
     );
-    const result = await payViaWebhook(
-      order.orderCode,
-      750000,
-      `CASE7-${runId}`,
-    );
+    const result = await payManually(order.orderCode, 750000, `CASE7-${runId}`);
 
     const refund = await refundsService.create(
       {

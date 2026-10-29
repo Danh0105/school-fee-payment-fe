@@ -28,7 +28,10 @@ describe('CryptoKeyService', () => {
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     });
 
-    fs.writeFileSync(path.join(tmpDir, 'our-private.pem'), ourKeyPair.privateKey);
+    fs.writeFileSync(
+      path.join(tmpDir, 'our-private.pem'),
+      ourKeyPair.privateKey,
+    );
     fs.writeFileSync(path.join(tmpDir, 'our-public.pem'), ourKeyPair.publicKey);
     fs.writeFileSync(path.join(tmpDir, 'bank-cert.pem'), bankKeyPair.publicKey);
   });
@@ -57,14 +60,17 @@ describe('CryptoKeyService', () => {
 
   it('ký dữ liệu bằng private key của mình và verify được bằng chính public key tương ứng', () => {
     const service = makeService();
-    const signData = '501690869202402011406342NDVNDV24012358711875800164T24200GKAJ7BY CT DEN:164T24200GKAJ7BY CK';
+    const signData =
+      '501690869202402011406342NDVNDV24012358711875800164T24200GKAJ7BY CT DEN:164T24200GKAJ7BY CK';
 
     const signature = service.sign(signData);
 
     const verifier = crypto.createVerify('RSA-SHA256');
     verifier.update(signData, 'utf8');
     verifier.end();
-    expect(verifier.verify(ourKeyPair.publicKey, signature, 'base64')).toBe(true);
+    expect(verifier.verify(ourKeyPair.publicKey, signature, 'base64')).toBe(
+      true,
+    );
   });
 
   it('verify() trả về true khi chữ ký hợp lệ từ bank (RSA_PKCS1_PADDING)', () => {
@@ -74,7 +80,10 @@ describe('CryptoKeyService', () => {
     signer.update(Buffer.from(signData, 'utf8'));
     signer.end();
     const signature = signer.sign(
-      { key: bankKeyPair.privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+      {
+        key: bankKeyPair.privateKey,
+        padding: crypto.constants.RSA_PKCS1_PADDING,
+      },
       'base64',
     );
 
@@ -88,7 +97,10 @@ describe('CryptoKeyService', () => {
     signer.update(Buffer.from(signData, 'utf8'));
     signer.end();
     const signature = signer.sign(
-      { key: bankKeyPair.privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+      {
+        key: bankKeyPair.privateKey,
+        padding: crypto.constants.RSA_PKCS1_PADDING,
+      },
       'base64',
     );
 
@@ -120,7 +132,10 @@ describe('CryptoKeyService', () => {
     signer.update(Buffer.from(signData, 'utf8'));
     signer.end();
     const signature = signer.sign(
-      { key: bankKeyPair.privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+      {
+        key: bankKeyPair.privateKey,
+        padding: crypto.constants.RSA_PKCS1_PADDING,
+      },
       'base64',
     );
     const withNewlines = signature.replace(/(.{20})/g, '$1\n');

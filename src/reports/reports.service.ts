@@ -88,10 +88,12 @@ export class ReportsService {
     if (filter.toDate)
       qb.andWhere('r.createdAt <= :toDate', { toDate: filter.toDate });
     if (filter.feeCategoryId) {
-      qb.innerJoin('r.feePlan', 'feePlan').andWhere(
-        'feePlan.feeCategoryId = :fcId',
-        { fcId: filter.feeCategoryId },
-      );
+      if (!qb.expressionMap.aliases.some((alias) => alias.name === 'feePlan')) {
+        qb.innerJoin('r.feePlan', 'feePlan');
+      }
+      qb.andWhere('feePlan.feeCategoryId = :fcId', {
+        fcId: filter.feeCategoryId,
+      });
     }
     if (filter.classId) {
       qb.andWhere(
@@ -313,6 +315,8 @@ export class ReportsService {
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.student', 'student')
       .leftJoinAndSelect('r.feePlan', 'feePlan')
+      .leftJoinAndSelect('feePlan.feeCategory', 'feeCategory')
+      .leftJoinAndSelect('r.semester', 'semester')
       .orderBy('r.createdAt', 'DESC');
     if (!this.applyFilters(qb, filter, scopedIds)) {
       return new PaginatedResult(

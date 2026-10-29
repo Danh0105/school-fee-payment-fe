@@ -46,7 +46,11 @@ export class CreateParentPaymentOrderDto {
   @Type(() => PaymentOrderItemInputDto)
   items: PaymentOrderItemInputDto[];
 
-  @ApiPropertyOptional({ enum: PaymentMethod })
+  @ApiPropertyOptional({
+    enum: PaymentMethod,
+    description:
+      'Yêu cầu thanh toán QR (VIETQR, BANK_TRANSFER hoặc bỏ trống) luôn được tạo thành QR tài khoản ảo VietinBank.',
+  })
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;

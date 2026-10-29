@@ -43,7 +43,10 @@ import {
   qrExpiryInstant,
   rowTransferContent,
 } from './import-payment-orders.service';
-import type { ImportedRowOrder } from './import-payment-qr-pdf.service';
+import {
+  paymentSlipContent,
+  type ImportedRowOrder,
+} from './import-payment-qr-pdf.service';
 
 /** VietinBank QR calls in flight at once while a payment list is saved. */
 const QR_CONCURRENCY = 5;
@@ -495,12 +498,13 @@ export class ImportsService {
     // VietinBank is called before the transaction opens; see prepareOrderQr.
     const preparedQrs = new Map<number, PreparedOrderQr>();
     if (paymentList) {
-      const payee = this.importPaymentOrdersService.beneficiaryName(
+      const schoolName =
         session.bootstrapContext?.school.name ??
-          (await this.schoolRepo.findOne({ where: { id: session.schoolId } }))
-            ?.name ??
-          '',
-      );
+        (await this.schoolRepo.findOne({ where: { id: session.schoolId } }))
+          ?.name ??
+        '';
+      const payee =
+        this.importPaymentOrdersService.beneficiaryName(schoolName);
       // A few bank calls at a time: one after another, a 490-row list took
       // minutes. The first failure stops the workers taking new rows.
       const rows = session.validRows;
@@ -515,6 +519,11 @@ export class ImportsService {
               await this.importPaymentOrdersService.prepareOrderQr(
                 new Decimal(row.originalAmount),
                 payee,
+                paymentSlipContent(
+                  schoolName,
+                  row.className,
+                  row.fullName,
+                ),
               ),
             );
           } catch (error) {

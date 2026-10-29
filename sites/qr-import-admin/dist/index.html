@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Import danh sách học sinh và xuất PDF mã QR thanh toán hàng loạt."
+    />
+    <title>Thu học phí · QR hàng loạt</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="login-shell" id="login-view">
+      <section class="login-story" aria-label="Giới thiệu">
+        <div class="brand brand-light">
+          <div class="brand-mark" aria-hidden="true">S</div>
+          <div>
+            <strong>SchoolPay</strong>
+            <span>Quản lý thu học phí</span>
+          </div>
+        </div>
+        <div class="story-copy">
+          <span class="eyebrow eyebrow-light">THANH TOÁN NHANH · ĐỐI SOÁT GỌN</span>
+          <h1>Một lần import.<br />Cả lớp có mã QR.</h1>
+          <p>
+            Chuẩn hóa dữ liệu học sinh, kiểm tra nội dung chuyển khoản và xuất
+            một file PDF sẵn sàng gửi phụ huynh.
+          </p>
+        </div>
+        <div class="story-metrics" aria-label="Các bước xử lý">
+          <div><strong>01</strong><span>Tải Excel</span></div>
+          <div><strong>02</strong><span>Kiểm tra</span></div>
+          <div><strong>03</strong><span>Xuất PDF</span></div>
+        </div>
+        <div class="story-orbit orbit-one"></div>
+        <div class="story-orbit orbit-two"></div>
+      </section>
+
+      <main class="login-panel">
+        <form class="login-card" id="login-form">
+          <div class="login-heading">
+            <span class="mobile-brand">SchoolPay</span>
+            <p class="eyebrow">CỔNG QUẢN TRỊ</p>
+            <h2>Chào mừng trở lại</h2>
+            <p>Đăng nhập để bắt đầu tạo bộ mã QR cho lớp học.</p>
+          </div>
+
+          <label class="field">
+            <span>Email</span>
+            <div class="input-wrap">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6" /></svg>
+              <input id="login-email" type="email" autocomplete="username" placeholder="ketoan@truong.edu.vn" required />
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Mật khẩu</span>
+            <div class="input-wrap">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 018 0v3" /></svg>
+              <input id="login-password" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu" required />
+              <button class="icon-button" id="toggle-password" type="button" aria-label="Hiện mật khẩu">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /></svg>
+              </button>
+            </div>
+          </label>
+
+          <details class="connection-settings">
+            <summary>Cấu hình máy chủ</summary>
+            <label class="field compact-field">
+              <span>URL backend</span>
+              <input id="api-base" type="url" placeholder="https://api.ten-truong.vn" />
+            </label>
+            <p>Để trống khi giao diện được phục vụ cùng backend.</p>
+          </details>
+
+          <p class="form-error" id="login-error" role="alert"></p>
+          <button class="button button-primary button-block" type="submit">
+            <span>Đăng nhập</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5" /></svg>
+          </button>
+          <button class="demo-link" id="demo-button" type="button">Xem giao diện với dữ liệu mẫu</button>
+        </form>
+      </main>
+    </div>
+
+    <div class="app-shell" id="app-view" hidden>
+      <aside class="sidebar">
+        <div class="brand brand-light sidebar-brand">
+          <div class="brand-mark" aria-hidden="true">S</div>
+          <div><strong>SchoolPay</strong><span>Quản lý thu học phí</span></div>
+        </div>
+
+        <nav class="side-nav" aria-label="Điều hướng chính">
+          <p>TỔNG QUAN</p>
+          <a href="#" class="nav-link">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+            Bảng điều khiển
+          </a>
+          <p>THU HỌC PHÍ</p>
+          <a href="#" class="nav-link">
+            <svg viewBox="0 0 24 24"><path d="M4 8h16M5 8l7-4 7 4v11H5zM9 12h6M9 16h6" /></svg>
+            Khoản thu
+          </a>
+          <a href="#" class="nav-link nav-active" aria-current="page">
+            <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM14 14h2v2h-2zM18 14h2v6h-6v-2" /></svg>
+            QR hàng loạt
+          </a>
+          <a href="#" class="nav-link">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h5" /></svg>
+            Giao dịch
+          </a>
+          <p>QUẢN LÝ</p>
+          <a href="#" class="nav-link">
+            <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-4 2-6 6-6s6 2 6 6M17 7h4M19 5v4" /></svg>
+            Học sinh
+          </a>
+          <a href="#" class="nav-link">
+            <svg viewBox="0 0 24 24"><path d="M3 20h18M5 20V9l7-5 7 5v11M9 12h6M9 16h6" /></svg>
+            Trường &amp; lớp
+          </a>
+        </nav>
+
+        <div class="sidebar-help">
+          <div class="help-icon">?</div>
+          <div><strong>Cần hỗ trợ?</strong><span>Kiểm tra hướng dẫn import</span></div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <button class="menu-button" id="menu-button" type="button" aria-label="Mở menu">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
+          <div class="breadcrumb"><span>Thu học phí</span><b>/</b><strong>QR hàng loạt</strong></div>
+          <div class="topbar-actions">
+            <span class="demo-badge" id="demo-badge" hidden>Đang xem thử</span>
+            <button class="notification-button" type="button" aria-label="Thông báo">
+              <svg viewBox="0 0 24 24"><path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 00-9 0v4zM10 20h4" /></svg>
+              <i></i>
+            </button>
+            <button class="profile-button" id="profile-button" type="button">
+              <span class="avatar" id="user-avatar">KT</span>
+              <span class="profile-copy"><strong id="user-name">Kế toán trường</strong><small id="user-role">ACCOUNTANT</small></span>
+              <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" /></svg>
+            </button>
+          </div>
+        </header>
+
+        <main class="page-content">
+          <section class="page-heading">
+            <div>
+              <p class="eyebrow">TẠO PHIẾU THANH TOÁN</p>
+              <h1>Xuất mã QR hàng loạt</h1>
+              <p>Import danh sách học sinh, kiểm tra dữ liệu và tải một file PDF cho cả lớp.</p>
+            </div>
+            <button class="button button-secondary" id="download-template" type="button">
+              <svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16" /></svg>
+              Tải file mẫu
+            </button>
+          </section>
+
+          <section class="stepper" aria-label="Tiến trình">
+            <div class="step step-active" data-step="1"><span>1</span><div><strong>Tải dữ liệu</strong><small>Chọn file Excel</small></div></div>
+            <i></i>
+            <div class="step" data-step="2"><span>2</span><div><strong>Kiểm tra</strong><small>Xác nhận thông tin</small></div></div>
+            <i></i>
+            <div class="step" data-step="3"><span>3</span><div><strong>Xuất PDF</strong><small>Tải mã QR</small></div></div>
+          </section>
+
+          <section class="panel import-panel">
+            <div class="panel-heading">
+              <div class="panel-icon">
+                <svg viewBox="0 0 24 24"><path d="M4 3h11l5 5v13H4zM15 3v6h5M8 14h8M8 17h6" /></svg>
+              </div>
+              <div><h2>Thông tin import</h2><p>Chọn đúng trường, năm học và sheet chứa danh sách.</p></div>
+            </div>
+
+            <div class="form-grid">
+              <label class="field"><span>Trường học <b>*</b></span><select id="school-select"><option value="">Chọn trường học</option></select></label>
+              <label class="field"><span>Năm học <b>*</b></span><select id="year-select" disabled><option value="">Chọn năm học</option></select></label>
+              <label class="field"><span>Tên sheet <b>*</b></span><input id="sheet-name" value="3A4" maxlength="31" placeholder="Ví dụ: 3A4" /></label>
+            </div>
+
+            <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Chọn file Excel">
+              <input id="file-input" type="file" accept=".xlsx" hidden />
+              <div class="upload-symbol">
+                <svg viewBox="0 0 24 24"><path d="M12 16V5M7 10l5-5 5 5M5 19h14" /></svg>
+              </div>
+              <div class="dropzone-copy"><strong>Kéo thả file Excel vào đây</strong><span>hoặc <u>chọn file từ máy tính</u></span><small>Hỗ trợ định dạng .xlsx · tối đa 10 MB</small></div>
+            </div>
+
+            <div class="selected-file" id="selected-file" hidden>
+              <div class="excel-icon">X</div>
+              <div><strong id="file-name">danh-sach.xlsx</strong><span id="file-size">0 KB</span></div>
+              <span class="file-ready">Sẵn sàng</span>
+              <button id="remove-file" type="button" aria-label="Xóa file">×</button>
+            </div>
+
+            <div class="panel-footer">
+              <p id="import-hint"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>Dữ liệu chỉ được lưu sau khi bạn xác nhận.</p>
+              <button class="button button-primary" id="preview-button" type="button" disabled>
+                Kiểm tra dữ liệu
+                <svg viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5" /></svg>
+              </button>
+            </div>
+          </section>
+
+          <section id="preview-section" hidden>
+            <div class="summary-grid">
+              <article class="summary-card"><span class="summary-icon blue"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" /></svg></span><div><small>Tổng học sinh</small><strong id="summary-total">0</strong></div></article>
+              <article class="summary-card"><span class="summary-icon green"><svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6" /></svg></span><div><small>Dữ liệu hợp lệ</small><strong id="summary-valid">0</strong></div></article>
+              <article class="summary-card"><span class="summary-icon red"><svg viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 9v5M12 17h.01" /></svg></span><div><small>Cần kiểm tra</small><strong id="summary-invalid">0</strong></div></article>
+              <article class="summary-card amount-card"><span class="summary-icon gold">₫</span><div><small>Tổng số tiền</small><strong id="summary-amount">0 ₫</strong></div></article>
+            </div>
+
+            <div class="validation-errors" id="validation-errors" hidden>
+              <div class="validation-errors-icon">!</div>
+              <div>
+                <strong>Một số dòng cần được chỉnh sửa</strong>
+                <p>Hệ thống chỉ tạo QR cho các dòng hợp lệ. Bạn có thể sửa file và tải lại để bổ sung.</p>
+                <ul id="validation-error-list"></ul>
+              </div>
+            </div>
+
+            <section class="panel data-panel">
+              <div class="table-heading">
+                <div><h2>Dữ liệu học sinh</h2><p id="table-caption">Kiểm tra lại trước khi xác nhận import.</p></div>
+                <div class="table-tools"><label class="search-box"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M16 16l5 5" /></svg><input id="table-search" placeholder="Tìm học sinh..." /></label><button class="filter-button" type="button">Tất cả <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" /></svg></button></div>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead><tr><th>STT</th><th>Học sinh</th><th>Ngày sinh</th><th>Lớp</th><th>Mã định danh</th><th>Số tiền</th><th>Trạng thái</th></tr></thead>
+                  <tbody id="student-rows"></tbody>
+                </table>
+              </div>
+              <div class="empty-state" id="empty-state" hidden>Không tìm thấy học sinh phù hợp.</div>
+              <div class="data-actions">
+                <button class="button button-ghost" id="reset-button" type="button">Chọn file khác</button>
+                <div>
+                  <button class="button button-secondary" id="confirm-button" type="button">Xác nhận import</button>
+                  <button class="button button-primary" id="pdf-button" type="button">
+                    <svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16" /></svg>
+                    Xuất PDF mã QR
+                  </button>
+                </div>
+              </div>
+            </section>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+    <div class="loading-overlay" id="loading-overlay" hidden><div class="spinner"></div><strong id="loading-text">Đang xử lý dữ liệu...</strong></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

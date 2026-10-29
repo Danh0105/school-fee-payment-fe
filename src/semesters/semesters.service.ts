@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { Semester } from './entities/semester.entity';
 import { QuerySemesterDto } from './dto/query-semester.dto';
 import { PaginatedResult } from '../common/dto/paginated-result.dto';
@@ -92,10 +92,10 @@ export class SemestersService {
   /** Returns the academic year's HK1/HK2 pair, ordered by start date. synchronizeDefaults guarantees both exist for every academic year. */
   async findPairByAcademicYear(academicYearId: string): Promise<Semester[]> {
     const semesters = await this.repo.find({
-      where: { academicYearId },
+      where: { academicYearId, code: In([...DEFAULT_SEMESTER_CODES]) },
       order: { startDate: 'ASC' },
     });
-    if (semesters.length < 2) {
+    if (semesters.length !== 2) {
       throw AppException.notFound(ErrorCode.SEMESTER_NOT_FOUND);
     }
     return semesters;

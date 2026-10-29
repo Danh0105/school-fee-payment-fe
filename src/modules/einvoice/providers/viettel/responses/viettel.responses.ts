@@ -32,4 +32,22 @@ export interface ViettelTransactionSearchResult {
   transactionID?: string | null;
   /** Set by the provider: Viettel holds a record for the uuid, numbered or not. */
   exists?: boolean;
+  /** 7.21 failed, but the healthy invoice-list fallback completed. */
+  lookupDegraded?: boolean;
+}
+
+export interface ViettelInvoiceListItem {
+  invoiceNo?: string | null;
+  transactionUuid?: string | null;
+  reservationCode?: string | null;
+  codeOfTax?: string | null;
+  issueDate?: string | number | null;
+  issueDateStr?: string | null;
+}
+
+export interface ViettelInvoiceListResponse extends ViettelEnvelope<unknown> {
+  totalRows?: number;
+  /** Older Viettel deployments use the singular spelling. */
+  totalRow?: number;
+  invoices?: ViettelInvoiceListItem[];
 }

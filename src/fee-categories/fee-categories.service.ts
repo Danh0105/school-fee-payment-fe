@@ -9,16 +9,30 @@ import { PaginatedResult } from '../common/dto/paginated-result.dto';
 import { AppException } from '../common/exceptions/app.exception';
 import { ErrorCode } from '../common/constants/error-codes';
 import { applySchoolScope } from '../common/utils/school-scope.util';
+import { SequenceService } from '../database/sequence.service';
 
 @Injectable()
 export class FeeCategoriesService {
   constructor(
     @InjectRepository(FeeCategory)
     private readonly repo: Repository<FeeCategory>,
+    private readonly sequenceService: SequenceService,
   ) {}
 
   async create(dto: CreateFeeCategoryDto): Promise<FeeCategory> {
-    return this.repo.save(this.repo.create(dto));
+    // This is an internal, immutable identifier. It deliberately does not
+    // derive from the Vietnamese display name.
+    for (;;) {
+      const code = await this.sequenceService.generateCode(
+        'KT',
+        'FEE_CATEGORY',
+        6,
+      );
+      // Older installations may already contain an auto-looking code while
+      // the new sequence is still empty, so skip such collisions safely.
+      if (await this.repo.exists({ where: { code } })) continue;
+      return this.repo.save(this.repo.create({ ...dto, code }));
+    }
   }
 
   async findAll(

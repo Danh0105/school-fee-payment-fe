@@ -12,6 +12,7 @@ import { SchoolsService } from '../schools/schools.service';
 import { SequenceService } from '../database/sequence.service';
 import { StudentClass } from '../student-classes/entities/student-class.entity';
 import { applySchoolScope } from '../common/utils/school-scope.util';
+import { School } from '../schools/entities/school.entity';
 
 @Injectable()
 export class StudentsService {
@@ -27,7 +28,14 @@ export class StudentsService {
     manager?: EntityManager,
   ): Promise<Student> {
     const repo = manager ? manager.getRepository(Student) : this.repo;
-    const school = await this.schoolsService.findById(dto.schoolId);
+    const school = manager
+      ? await manager.getRepository(School).findOne({
+          where: { id: dto.schoolId, deletedAt: IsNull() },
+        })
+      : await this.schoolsService.findById(dto.schoolId);
+    if (!school) {
+      throw AppException.notFound(ErrorCode.SCHOOL_NOT_FOUND);
+    }
 
     const identifierCode = dto.identifierCode?.trim() || undefined;
     if (identifierCode) {

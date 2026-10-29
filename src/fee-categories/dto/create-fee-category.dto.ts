@@ -7,10 +7,6 @@ export class CreateFeeCategoryDto {
   @IsUUID()
   schoolId: string;
 
-  @ApiProperty({ example: 'KNS' })
-  @IsString()
-  code: string;
-
   @ApiProperty({ example: 'Kỹ năng sống' })
   @IsString()
   name: string;
@@ -19,11 +15,6 @@ export class CreateFeeCategoryDto {
   @IsOptional()
   @IsString()
   description?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  accountingCode?: string;
 
   @ApiPropertyOptional({ enum: FeeCategoryStatus })
   @IsOptional()

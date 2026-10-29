@@ -38,6 +38,7 @@ import { ViettelSinvoiceHttpService } from './viettel-sinvoice-http.service';
 import {
   ViettelEnvelope,
   ViettelInvoiceFileResult,
+  ViettelInvoiceListResponse,
   ViettelIssueResult,
   ViettelTransactionSearchResult,
 } from './responses/viettel.responses';
@@ -135,10 +136,15 @@ export class ViettelSinvoiceService implements EInvoiceProvider {
     return this.request(VIETTEL_ENDPOINTS.exchangeFile, dto);
   }
 
-  searchInvoices(taxCode: string, dto: SearchInvoicesDto): Promise<unknown> {
-    return this.request(VIETTEL_ENDPOINTS.search, dto, {
-      supplierTaxCode: taxCode,
-    });
+  searchInvoices(
+    taxCode: string,
+    dto: SearchInvoicesDto,
+  ): Promise<ViettelInvoiceListResponse> {
+    return this.request<ViettelInvoiceListResponse>(
+      VIETTEL_ENDPOINTS.search,
+      dto,
+      { supplierTaxCode: taxCode },
+    );
   }
 
   getCustomFields(taxCode: string, templateCode?: string): Promise<unknown> {
@@ -269,14 +275,90 @@ export class ViettelSinvoiceService implements EInvoiceProvider {
     );
   }
 
-  getInvoiceByTransactionUuid(
+  async getInvoiceByTransactionUuid(
     taxCode: string,
     uuid: string,
   ): Promise<ViettelTransactionSearchResult> {
-    return this.findByTransactionUuid({
-      supplierTaxCode: taxCode,
-      transactionUuid: uuid,
-    });
+    try {
+      return await this.findByTransactionUuid({
+        supplierTaxCode: taxCode,
+        transactionUuid: uuid,
+      });
+    } catch (error) {
+      if (!(error instanceof ViettelSinvoiceException) || !error.retryable)
+        throw error;
+
+      // Viettel production can return HTTP 500 GENERAL from 7.21 while the
+      // invoice is visible on the portal. 7.6 exposes transactionUuid for
+      // both unsigned drafts and issued invoices, so it is a safe read-only
+      // reconciliation path when the dedicated lookup is unavailable.
+      const found = await this.findInRecentInvoiceList(taxCode, uuid);
+      if (found) return found;
+
+      // Tell the workflow that the fallback itself was healthy. Real issue
+      // retries must still not resend 7.2; draft retries may safely upsert 7.8
+      // with the same UUID.
+      return { invoiceNo: '', lookupDegraded: true };
+    }
+  }
+
+  private async findInRecentInvoiceList(
+    taxCode: string,
+    uuid: string,
+  ): Promise<ViettelTransactionSearchResult | null> {
+    const end = new Date();
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - 31);
+    const rowPerPage = 1000;
+    let pageNum = 1;
+    let totalRows = Number.POSITIVE_INFINITY;
+
+    while ((pageNum - 1) * rowPerPage < totalRows) {
+      const response = await this.searchInvoices(taxCode, {
+        startDate: this.vietnamDate(start),
+        endDate: this.vietnamDate(end),
+        pageNum,
+        rowPerPage,
+      });
+      const errorCode = this.getBusinessErrorCode(response);
+      if (errorCode) {
+        throw new ViettelSinvoiceException(
+          'VALIDATION_ERROR',
+          null,
+          errorCode,
+          response.description ?? response.message ?? 'Viettel business error',
+          VIETTEL_ENDPOINTS.search.path,
+          uuid,
+          false,
+        );
+      }
+      const rows = response.invoices ?? [];
+      const match = rows.find((row) => row.transactionUuid === uuid);
+      if (match) {
+        return {
+          invoiceNo: numberedInvoiceNo(match.invoiceNo),
+          reservationCode: match.reservationCode,
+          codeOfTax: match.codeOfTax,
+          issueDate: match.issueDate ?? match.issueDateStr,
+          exists: true,
+        };
+      }
+      totalRows = Number(
+        response.totalRows ?? response.totalRow ?? rows.length,
+      );
+      if (rows.length === 0) break;
+      pageNum += 1;
+    }
+    return null;
+  }
+
+  private vietnamDate(value: Date): string {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(value);
   }
 
   getReservationCodes(

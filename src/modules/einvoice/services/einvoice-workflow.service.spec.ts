@@ -214,6 +214,20 @@ describe('EInvoiceWorkflowService', () => {
     expect(invoice.status).toBe(EInvoiceStatus.QUEUED);
   });
 
+  it('7.6 không thấy hóa đơn khi 7.21 lỗi thì không gửi lại 7.2', async () => {
+    provider.issueInvoice.mockRejectedValueOnce(timeout());
+    await expect(service.issue('invoice-id')).rejects.toMatchObject({
+      kind: 'TIMEOUT',
+    });
+    provider.getInvoiceByTransactionUuid.mockResolvedValue({
+      invoiceNo: '',
+      lookupDegraded: true,
+    });
+    await service.issue('invoice-id');
+    expect(provider.issueInvoice).toHaveBeenCalledTimes(1);
+    expect(invoice.status).toBe(EInvoiceStatus.WAITING_INVOICE_NUMBER);
+  });
+
   it('atomic claim ngăn hai worker phát hành song song', async () => {
     invoices.update.mockResolvedValue({ affected: 0 });
     await service.issue('invoice-id');
@@ -297,6 +311,26 @@ describe('EInvoiceWorkflowService', () => {
       });
       await service.issue('invoice-id');
       expect(provider.createOrUpdateInvoiceDraft).toHaveBeenCalledTimes(1);
+      expect(invoice.status).toBe(EInvoiceStatus.DRAFT);
+    });
+
+    it('7.6 không thấy nháp khi 7.21 lỗi thì upsert lại 7.8 cùng UUID', async () => {
+      provider.createOrUpdateInvoiceDraft
+        .mockRejectedValueOnce(timeout())
+        .mockResolvedValueOnce({ invoiceNo: '', transactionID: 'tx-draft' });
+      await expect(service.issue('invoice-id')).rejects.toMatchObject({
+        kind: 'TIMEOUT',
+      });
+      provider.getInvoiceByTransactionUuid.mockResolvedValue({
+        invoiceNo: '',
+        lookupDegraded: true,
+      });
+      await service.issue('invoice-id');
+      expect(provider.createOrUpdateInvoiceDraft).toHaveBeenCalledTimes(2);
+      expect(
+        provider.createOrUpdateInvoiceDraft.mock.calls[1][0].generalInvoiceInfo
+          .transactionUuid,
+      ).toBe(uuid);
       expect(invoice.status).toBe(EInvoiceStatus.DRAFT);
     });
 

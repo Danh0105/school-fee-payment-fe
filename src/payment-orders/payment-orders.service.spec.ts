@@ -1,5 +1,4 @@
 import Decimal from 'decimal.js';
-import { ConfigService } from '@nestjs/config';
 import { DataSource, DeepPartial, EntityManager, Repository } from 'typeorm';
 import {
   PaymentMethod,
@@ -90,9 +89,6 @@ describe('PaymentOrdersService school bank compatibility', () => {
     const sequenceService = {
       generateCode: jest.fn().mockResolvedValue('PAY260910000001'),
     } as unknown as SequenceService;
-    const config = {
-      get: jest.fn().mockReturnValue(60),
-    } as unknown as ConfigService;
     const service = new PaymentOrdersService(
       {} as Repository<PaymentOrder>,
       dataSource,
@@ -101,7 +97,6 @@ describe('PaymentOrdersService school bank compatibility', () => {
       studentsService,
       paymentProvidersService,
       sequenceService,
-      config,
     );
 
     const order = await service.create({
@@ -120,6 +115,7 @@ describe('PaymentOrdersService school bank compatibility', () => {
     expect(qrInput.amount).toBeInstanceOf(Decimal);
     expect(order).toMatchObject({
       status: PaymentOrderStatus.PENDING,
+      expiresAt: null,
       bankCode: '970436',
       bankAccountNumber: '0123456789',
       qrPayload: 'vietqr-payload',
@@ -150,7 +146,9 @@ describe('PaymentOrdersService VietinBank virtual-account transferContent', () =
       save: saveOrder,
     } as unknown as Repository<PaymentOrder>;
     const itemRepository = {
-      create: jest.fn((input: DeepPartial<PaymentOrderItem>) => input as PaymentOrderItem),
+      create: jest.fn(
+        (input: DeepPartial<PaymentOrderItem>) => input as PaymentOrderItem,
+      ),
       save: jest.fn((input: PaymentOrderItem[]) => Promise.resolve(input)),
     } as unknown as Repository<PaymentOrderItem>;
     const getRepository = jest.fn(
@@ -192,7 +190,8 @@ describe('PaymentOrdersService VietinBank virtual-account transferContent', () =
     const generateQr: jest.MockedFunction<ViettinbankProvider['generateQr']> =
       jest.fn().mockResolvedValue({
         qrPayload: 'emv-payload',
-        qrUrl: 'https://img.vietqr.io/image/970415-1ICSPD0260922000001-compact2.png',
+        qrUrl:
+          'https://img.vietqr.io/image/970415-1ICSPD0260922000001-compact2.png',
         raw: {},
       });
     const paymentProvidersService = {
@@ -204,9 +203,6 @@ describe('PaymentOrdersService VietinBank virtual-account transferContent', () =
     const sequenceService = {
       generateCode: jest.fn().mockResolvedValue('PAY260922000001'),
     } as unknown as SequenceService;
-    const config = {
-      get: jest.fn().mockReturnValue(60),
-    } as unknown as ConfigService;
     const service = new PaymentOrdersService(
       {} as Repository<PaymentOrder>,
       dataSource,
@@ -215,7 +211,6 @@ describe('PaymentOrdersService VietinBank virtual-account transferContent', () =
       studentsService,
       paymentProvidersService,
       sequenceService,
-      config,
     );
 
     const order = await service.create({
@@ -231,5 +226,40 @@ describe('PaymentOrdersService VietinBank virtual-account transferContent', () =
     expect(vav.length).toBeLessThanOrEqual(12);
     expect(order.orderCode).toBe('PAY260922000001');
     expect(order.transferContent).toBe('260922000001');
+  });
+});
+
+describe('PaymentOrdersService QR response', () => {
+  it('returns an unlimited VietinBank QR with no expiry', async () => {
+    const order = {
+      id: 'order-id',
+      status: PaymentOrderStatus.PENDING,
+      paymentMethod: PaymentMethod.VIETINBANK,
+      qrPayload: 'emv-payload',
+      qrUrl: 'https://example.test/vietinbank.png',
+      expiresAt: null,
+    } as PaymentOrder;
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(order),
+      save: jest.fn(),
+    } as unknown as Repository<PaymentOrder>;
+    const service = new PaymentOrdersService(
+      repo,
+      {} as DataSource,
+      {} as ReceivablesService,
+      {} as SchoolsService,
+      {} as StudentsService,
+      {} as PaymentProvidersService,
+      {} as SequenceService,
+    );
+
+    await expect(service.getQr('order-id')).resolves.toEqual({
+      qrPayload: 'emv-payload',
+      qrUrl: 'https://example.test/vietinbank.png',
+      expiresAt: null,
+      status: PaymentOrderStatus.PENDING,
+      paymentMethod: PaymentMethod.VIETINBANK,
+    });
+    expect(repo.save).not.toHaveBeenCalled();
   });
 });

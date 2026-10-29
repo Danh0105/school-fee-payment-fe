@@ -26,6 +26,8 @@ import { ReceivablesService } from '../src/receivables/receivables.service';
 import { PaymentOrdersService } from '../src/payment-orders/payment-orders.service';
 import { PaymentTransactionsService } from '../src/payment-transactions/payment-transactions.service';
 import { ReconciliationService } from '../src/reconciliation/reconciliation.service';
+import { CryptoKeyService } from '../src/viettinbank/crypto-key.service';
+import { ViettinbankApiService } from '../src/viettinbank/viettinbank-api.service';
 import { EInvoiceService } from '../src/modules/einvoice/einvoice.service';
 import { EInvoice } from '../src/modules/einvoice/entities/einvoice.entity';
 import { EInvoiceAttempt } from '../src/modules/einvoice/entities/einvoice-attempt.entity';
@@ -50,7 +52,11 @@ import {
   AcademicYearStatus,
   FeeAssignmentTargetType,
   FeePlanStatus,
+  PaymentMethod,
   PaymentOrderStatus,
+  PaymentProviderCode,
+  PaymentTransactionStatus,
+  ReceivableStatus,
 } from '../src/common/enums/status.enum';
 
 jest.setTimeout(90_000);
@@ -356,6 +362,8 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
   let paymentOrdersService: PaymentOrdersService;
   let paymentTransactionsService: PaymentTransactionsService;
   let reconciliationService: ReconciliationService;
+  let cryptoKeyService: CryptoKeyService;
+  let viettinbankApiService: ViettinbankApiService;
 
   let schoolA: School;
   let schoolB: School;
@@ -390,6 +398,7 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
       VIETTEL_SINVOICE_AUTH_MODE: 'TOKEN',
       VIETTEL_SINVOICE_TIMEOUT: '3000',
       VIETTEL_SINVOICE_FILE_STORAGE_PATH: storageDir,
+      VIETINBANK_ACCOUNT: '1ICS',
     });
     // Loaded only now so ConfigModule sees the mock's dynamic port.
     const { AppModule } =
@@ -428,6 +437,8 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
     paymentOrdersService = app.get(PaymentOrdersService);
     paymentTransactionsService = app.get(PaymentTransactionsService);
     reconciliationService = app.get(ReconciliationService);
+    cryptoKeyService = app.get(CryptoKeyService);
+    viettinbankApiService = app.get(ViettinbankApiService);
     const schoolsService = app.get(SchoolsService);
     const usersService = app.get(UsersService);
 
@@ -485,7 +496,6 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
     });
     feeCategory = await app.get(FeeCategoriesService).create({
       schoolId: schoolA.id,
-      code: `EIF${runId}`,
       name: 'Học phí',
     });
 
@@ -1338,6 +1348,111 @@ describe('E-invoice / Viettel S-Invoice (e2e, mocked Viettel)', () => {
           : null,
       );
     }
+
+    it('QR động VietinBank → lưu giao dịch, tạo phiếu thu, gạch nợ và tạo đúng một nháp Viettel', async () => {
+      const qrPayload =
+        '00020101021238570010A00000072701270006970415011312345678901230208QRIBFTTA';
+      const generateQr = jest
+        .spyOn(viettinbankApiService, 'generateQr')
+        .mockResolvedValue({
+          requestId: `QR-${runId}-${seq}`,
+          providerId: '9752',
+          merchantId: '9752',
+          clientDt: new Date().toISOString(),
+          status: { statusCode: '00' },
+          signature: 'bank-signature',
+          data: { base64QRCode: Buffer.from(qrPayload).toString('base64') },
+        });
+      const verify = jest
+        .spyOn(cryptoKeyService, 'verify')
+        .mockReturnValue(true);
+
+      try {
+        const { student, receivableId } =
+          await createStudentWithReceivable('720000');
+        const order = await paymentOrdersService.create(
+          {
+            studentId: student.id,
+            items: [{ receivableId }],
+            paymentMethod: PaymentMethod.VIETINBANK,
+          },
+          userId,
+        );
+
+        expect(order.qrPayload).toBe(qrPayload);
+        expect(generateQr).toHaveBeenCalledWith(
+          expect.objectContaining({
+            accountNumber: `1ICS${order.transferContent}`,
+            amount: 720000,
+            purposeOfTrans: order.transferContent,
+          }),
+        );
+
+        const bankPayload = {
+          msgId: `MSG-${runId}-${seq}`,
+          providerId: '9752',
+          transId: `VTB-${runId}-${seq}`,
+          transTime: '20261015141530',
+          transType: '3',
+          custCode: `1ICS${order.transferContent}`,
+          recvAcctId: '1ICS',
+          amount: '720000',
+          bankTransId: `BANK-${runId}-${seq}`,
+          remark: `Thanh toan ${order.transferContent}`,
+          currencyCode: 'VND',
+          signature: 'valid-signature',
+        };
+        const paid = await paymentTransactionsService.ingest(
+          PaymentProviderCode.VIETINBANK,
+          bankPayload,
+          {},
+        );
+
+        expect(paid).toMatchObject({
+          duplicate: false,
+          matched: true,
+        });
+        expect(verify).toHaveBeenCalled();
+        expect(
+          (await paymentTransactionsService.findById(paid.transactionId!))
+            .status,
+        ).toBe(PaymentTransactionStatus.ALLOCATED);
+        expect((await receivablesService.findById(receivableId)).status).toBe(
+          ReceivableStatus.PAID,
+        );
+        expect(
+          await receipts.countBy({
+            paymentTransactionId: paid.transactionId!,
+          }),
+        ).toBe(1);
+
+        const draft = await waitForStatus(
+          paid.transactionId!,
+          EInvoiceStatus.DRAFT,
+        );
+        expect(mock.draftCallsFor(draft.transactionUuid)).toHaveLength(1);
+        expect(mock.issueCallsFor(draft.transactionUuid)).toHaveLength(0);
+
+        const retried = await paymentTransactionsService.ingest(
+          PaymentProviderCode.VIETINBANK,
+          bankPayload,
+          {},
+        );
+        expect(retried).toMatchObject({ duplicate: true, matched: false });
+        expect(
+          await receipts.countBy({
+            paymentTransactionId: paid.transactionId!,
+          }),
+        ).toBe(1);
+        expect(await invoices.countBy({ paymentId: paid.transactionId! })).toBe(
+          1,
+        );
+        expect(mock.draftCallsFor(draft.transactionUuid)).toHaveLength(1);
+      } finally {
+        verify.mockRestore();
+        generateQr.mockRestore();
+      }
+    });
 
     it('thanh toán khớp → nháp 7.8 (không gọi 7.2) → chưa ký thì đồng bộ vẫn là nháp → ký trên cổng → đồng bộ lấy số, tải file, gửi email → COMPLETED', async () => {
       const paid = await payNewReceivable();
